@@ -1,0 +1,6 @@
+@Ease_HRM_HostAddress = http://localhost:5031
+
+GET {{Ease_HRM_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

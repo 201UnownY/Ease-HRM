@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Ease-HRM.Application/Ease-HRM.Application.csproj" />
+  <Project Path="Ease-HRM.Domain/Ease-HRM.Domain.csproj" />
+  <Project Path="Ease-HRM.Infrastructure/Ease-HRM.Infrastructure.csproj" />
+  <Project Path="Ease-HRM/Ease-HRM.Api.csproj" />
+</Solution>
