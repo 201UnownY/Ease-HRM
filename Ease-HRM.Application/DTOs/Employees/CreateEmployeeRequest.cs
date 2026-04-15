@@ -1,0 +1,13 @@
+namespace Ease_HRM.Application.DTOs.Employees;
+
+public class CreateEmployeeRequest
+{
+    public Guid UserId { get; set; }
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public Guid OrgUnitId { get; set; }
+    public Guid? ManagerId { get; set; }
+    public DateTime JoinDate { get; set; }
+}
