@@ -1,5 +1,6 @@
 using Ease_HRM.Application.DTOs.OrgUnits;
 using Ease_HRM.Application.Interfaces;
+using Ease_HRM.Application.Helpers;
 using Ease_HRM.Domain.Entities;
 
 namespace Ease_HRM.Application.Services;
@@ -15,12 +16,7 @@ public class OrgUnitService : IOrgUnitService
 
     public async Task<OrgUnitDto> CreateOrgUnitAsync(CreateOrgUnitRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedName = request.Name.Trim().ToLowerInvariant();
-
-        if (string.IsNullOrWhiteSpace(normalizedName))
-        {
-            throw new ArgumentException("OrgUnit name is required.");
-        }
+        var normalizedName = StringHelper.Normalize(request.Name, "OrgUnit name");
 
         if (await _orgUnitRepository.NameExistsAsync(normalizedName, cancellationToken))
         {

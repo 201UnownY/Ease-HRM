@@ -63,6 +63,7 @@ public static class Permissions
     {
         public const string CheckIn = "attendance.checkin";
         public const string CheckOut = "attendance.checkout";
+        public const string ManagePolicy = "attendance.manage_policy";
         public const string View = "attendance.view";
     }
 

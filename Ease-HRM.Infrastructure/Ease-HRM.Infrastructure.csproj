@@ -21,4 +21,8 @@
     <ProjectReference Include="..\Ease-HRM.Application\Ease-HRM.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Data\Configurations\" />
+  </ItemGroup>
+
 </Project>

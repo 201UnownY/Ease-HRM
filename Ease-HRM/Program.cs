@@ -45,7 +45,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnAuthenticationFailed = context =>
             {
-                Console.WriteLine($"JWT Failed: {context.Exception.Message}");
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                logger.LogWarning("JWT authentication failed.");
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
@@ -66,6 +67,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await PermissionSeeder.SeedAsync(db);
+    await WorkScheduleSeeder.SeedDefaultGlobalScheduleAsync(db);
 }
 
 // Configure the HTTP request pipeline.

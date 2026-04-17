@@ -28,6 +28,14 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Salary structure created successfully"));
     }
 
+    [HasPermission(Permissions.Payroll.ManageSalaryStructure)]
+    [HttpPut("salary-structure")]
+    public async Task<IActionResult> UpdateSalaryStructure([FromBody] UpdateSalaryStructureRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _payrollService.UpdateSalaryStructureAsync(request, cancellationToken);
+        return Ok(ApiResponseHelper.Success(result, "Salary structure updated successfully"));
+    }
+
     [HasPermission(Permissions.Payroll.Generate)]
     [HttpPost("generate")]
     public async Task<IActionResult> GeneratePayroll([FromQuery] Guid employeeId, [FromQuery] int year, [FromQuery] int month, CancellationToken cancellationToken)

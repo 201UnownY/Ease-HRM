@@ -1,5 +1,6 @@
 using Ease_HRM.Application.DTOs.LeaveTypes;
 using Ease_HRM.Application.Interfaces;
+using Ease_HRM.Application.Helpers;
 using Ease_HRM.Domain.Entities;
 
 namespace Ease_HRM.Application.Services;
@@ -15,12 +16,7 @@ public class LeaveTypeService : ILeaveTypeService
 
     public async Task<LeaveTypeDto> CreateLeaveTypeAsync(CreateLeaveTypeRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedName = request.Name.Trim().ToLowerInvariant();
-
-        if (string.IsNullOrWhiteSpace(normalizedName))
-        {
-            throw new ArgumentException("Leave type name is required.");
-        }
+        var normalizedName = StringHelper.Normalize(request.Name, "Leave type name");
 
         if (request.DefaultDays <= 0)
         {

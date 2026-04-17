@@ -13,4 +13,7 @@ public class Payroll
     public decimal AttendanceDeduction { get; set; }
     public decimal NetSalary { get; set; }
     public DateTime GeneratedAt { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedBy { get; set; }
 }

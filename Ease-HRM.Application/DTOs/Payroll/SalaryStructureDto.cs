@@ -9,5 +9,5 @@ public class SalaryStructureDto
     public decimal Allowances { get; set; }
     public decimal Deductions { get; set; }
     public DateTime EffectiveFrom { get; set; }
-    public bool IsActive { get; set; }
+    public DateTime? EffectiveTo { get; set; }
 }

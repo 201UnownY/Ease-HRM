@@ -29,6 +29,16 @@ public class UserRoleRepository : IUserRoleRepository
         return _context.UserRoles.AnyAsync(x => x.UserId == userId && x.RoleId == roleId, cancellationToken);
     }
 
+    public Task<List<string>> GetUserRoleNamesAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return (from userRole in _context.UserRoles.AsNoTracking()
+                join role in _context.Roles.AsNoTracking() on userRole.RoleId equals role.Id
+                where userRole.UserId == userId
+                select role.Name)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
     public Task<List<UserRole>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         return _context.UserRoles

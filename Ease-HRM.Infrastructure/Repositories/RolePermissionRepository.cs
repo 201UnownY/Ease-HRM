@@ -42,6 +42,21 @@ public class RolePermissionRepository : IRolePermissionRepository
             .AnyAsync(cancellationToken);
     }
 
+    public async Task<List<string>> GetUserPermissionsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return await (
+            from userRole in _context.UserRoles.AsNoTracking()
+            join rolePermission in _context.RolePermissions.AsNoTracking()
+                on userRole.RoleId equals rolePermission.RoleId
+            join permission in _context.Permissions.AsNoTracking()
+                on rolePermission.PermissionId equals permission.Id
+            where userRole.UserId == userId
+            select permission.Name
+        )
+        .Distinct()
+        .ToListAsync(cancellationToken);
+    }
+
     public Task<List<RolePermission>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         return _context.RolePermissions

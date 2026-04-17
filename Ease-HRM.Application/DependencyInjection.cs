@@ -11,6 +11,7 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IRoleService, RoleService>();
         services.AddScoped<IPermissionService, PermissionService>();
+        services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IUserRoleService, UserRoleService>();
         services.AddScoped<IRolePermissionService, RolePermissionService>();
         services.AddScoped<IOrgUnitService, OrgUnitService>();
@@ -18,7 +19,9 @@ public static class DependencyInjection
         services.AddScoped<ILeaveTypeService, LeaveTypeService>();
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
         services.AddScoped<IAttendanceService, AttendanceService>();
+        services.AddScoped<IAttendancePolicyService, AttendancePolicyService>();
         services.AddScoped<IPayrollService, PayrollService>();
+        services.AddScoped<IWorkScheduleService, WorkScheduleService>();
 
         return services;
     }

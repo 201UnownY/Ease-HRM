@@ -1,5 +1,6 @@
 using Ease_HRM.Application.DTOs.Employees;
 using Ease_HRM.Application.Interfaces;
+using Ease_HRM.Application.Helpers;
 using Ease_HRM.Domain.Entities;
 
 namespace Ease_HRM.Application.Services;
@@ -17,37 +18,12 @@ public class EmployeeService : IEmployeeService
 
     public async Task<EmployeeDto> CreateEmployeeAsync(CreateEmployeeRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-
-        if (string.IsNullOrWhiteSpace(normalizedEmail))
-        {
-            throw new ArgumentException("Email is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.FirstName))
-        {
-            throw new ArgumentException("FirstName is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.LastName))
-        {
-            throw new ArgumentException("LastName is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Phone))
-        {
-            throw new ArgumentException("Phone is required.");
-        }
-
-        if (request.UserId == Guid.Empty)
-        {
-            throw new ArgumentException("UserId is required.");
-        }
-
-        if (request.OrgUnitId == Guid.Empty)
-        {
-            throw new ArgumentException("OrgUnitId is required.");
-        }
+        var normalizedEmail = ValidationHelper.NormalizeEmail(request.Email);
+        var firstName = ValidationHelper.RequireString(request.FirstName, "FirstName");
+        var lastName = ValidationHelper.RequireString(request.LastName, "LastName");
+        var phone = ValidationHelper.RequireString(request.Phone, "Phone");
+        var userId = ValidationHelper.RequireGuid(request.UserId, "UserId");
+        var orgUnitId = ValidationHelper.RequireGuid(request.OrgUnitId, "OrgUnitId");
 
         if (request.JoinDate > DateTime.UtcNow)
         {
@@ -56,7 +32,7 @@ public class EmployeeService : IEmployeeService
 
         if (request.ManagerId.HasValue && request.ManagerId != Guid.Empty)
         {
-            if (request.ManagerId == request.UserId)
+            if (request.ManagerId == userId)
             {
                 throw new ArgumentException("Employee cannot be their own manager.");
             }
@@ -72,12 +48,12 @@ public class EmployeeService : IEmployeeService
             throw new InvalidOperationException("Email already exists.");
         }
 
-        if (!await _employeeRepository.UserExistsAsync(request.UserId, cancellationToken))
+        if (!await _employeeRepository.UserExistsAsync(userId, cancellationToken))
         {
             throw new InvalidOperationException("User not found.");
         }
 
-        if (!await _orgUnitRepository.ExistsAsync(request.OrgUnitId, cancellationToken))
+        if (!await _orgUnitRepository.ExistsAsync(orgUnitId, cancellationToken))
         {
             throw new InvalidOperationException("OrgUnit not found.");
         }
@@ -85,12 +61,12 @@ public class EmployeeService : IEmployeeService
         var employee = new Employee
         {
             Id = Guid.NewGuid(),
-            UserId = request.UserId,
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
+            UserId = userId,
+            FirstName = firstName,
+            LastName = lastName,
             Email = normalizedEmail,
-            Phone = request.Phone.Trim(),
-            OrgUnitId = request.OrgUnitId,
+            Phone = phone,
+            OrgUnitId = orgUnitId,
             ManagerId = request.ManagerId,
             JoinDate = request.JoinDate,
             IsActive = true

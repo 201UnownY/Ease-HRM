@@ -1,5 +1,7 @@
 using Ease_HRM.Application.DTOs.Roles;
+using Ease_HRM.Application.Constants;
 using Ease_HRM.Application.Interfaces;
+using Ease_HRM.Application.Helpers;
 using Ease_HRM.Domain.Entities;
 
 namespace Ease_HRM.Application.Services;
@@ -8,21 +10,18 @@ public class RoleService : IRoleService
 {
     private readonly IRoleRepository _roleRepository;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IAuditLogService _auditLogService;
 
-    public RoleService(IRoleRepository roleRepository, ICurrentUserService currentUserService)
+    public RoleService(IRoleRepository roleRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService)
     {
         _roleRepository = roleRepository;
         _currentUserService = currentUserService;
+        _auditLogService = auditLogService;
     }
 
     public async Task<RoleDto> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new ArgumentException("Role name is required.");
-        }
-
-        var normalizedName = request.Name.Trim().ToLowerInvariant();
+        var normalizedName = StringHelper.Normalize(request.Name, "Role name");
 
         if (await _roleRepository.NameExistsAsync(normalizedName, cancellationToken))
         {
@@ -45,6 +44,8 @@ public class RoleService : IRoleService
 
         await _roleRepository.AddAsync(role, cancellationToken);
         await _roleRepository.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.LogAsync(AuditActions.Create, AuditEntities.Role, role.Id, $"Role created: {role.Name}", cancellationToken);
 
         return new RoleDto
         {

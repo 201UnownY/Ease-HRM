@@ -1,28 +1,34 @@
 using Ease_HRM.Application.DTOs.Permissions;
 using Ease_HRM.Application.Interfaces;
+using Ease_HRM.Application.Helpers;
 using Ease_HRM.Domain.Entities;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Ease_HRM.Application.Services;
 
 public class PermissionService : IPermissionService
 {
+    private static readonly TimeSpan PermissionCacheDuration = TimeSpan.FromMinutes(5);
     private readonly IPermissionRepository _permissionRepository;
+    private readonly IRolePermissionRepository _rolePermissionRepository;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IMemoryCache _memoryCache;
 
-    public PermissionService(IPermissionRepository permissionRepository, ICurrentUserService currentUserService)
+    public PermissionService(
+        IPermissionRepository permissionRepository,
+        IRolePermissionRepository rolePermissionRepository,
+        ICurrentUserService currentUserService,
+        IMemoryCache memoryCache)
     {
         _permissionRepository = permissionRepository;
+        _rolePermissionRepository = rolePermissionRepository;
         _currentUserService = currentUserService;
+        _memoryCache = memoryCache;
     }
 
     public async Task<PermissionDto> CreatePermissionAsync(CreatePermissionRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new ArgumentException("Permission name is required.");
-        }
-
-        var normalizedName = request.Name.Trim().ToLowerInvariant();
+        var normalizedName = StringHelper.Normalize(request.Name, "Permission name");
 
         if (await _permissionRepository.NameExistsAsync(normalizedName, cancellationToken))
         {
@@ -72,5 +78,27 @@ public class PermissionService : IPermissionService
             })
             .ToList()
             .AsReadOnly();
+    }
+
+    public async Task<IReadOnlyCollection<string>> GetPermissionsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var cacheKey = $"permissions:{userId}";
+
+        if (_memoryCache.TryGetValue(cacheKey, out IReadOnlyCollection<string>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var permissions = await _rolePermissionRepository.GetUserPermissionsAsync(userId, cancellationToken);
+
+        var normalized = permissions
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList()
+            .AsReadOnly();
+
+        _memoryCache.Set(cacheKey, normalized, PermissionCacheDuration);
+        return normalized;
     }
 }

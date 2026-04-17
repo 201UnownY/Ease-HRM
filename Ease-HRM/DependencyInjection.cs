@@ -14,6 +14,8 @@ public static class DependencyInjection
         services.AddApplication()
             .AddInfrastructure(configuration);
 
+        services.AddMemoryCache();
+
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
 

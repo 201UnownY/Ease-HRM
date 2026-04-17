@@ -1,4 +1,6 @@
 using Ease_HRM.Application.DTOs.Attendance;
+using Ease_HRM.Application.Constants;
+using Ease_HRM.Application.Helpers;
 using Ease_HRM.Application.Interfaces;
 using Ease_HRM.Domain.Entities;
 using Ease_HRM.Domain.Enums;
@@ -8,28 +10,27 @@ namespace Ease_HRM.Application.Services;
 public class AttendanceService : IAttendanceService
 {
     private readonly IAttendanceRepository _attendanceRepository;
+    private readonly IAuditLogService _auditLogService;
 
-    public AttendanceService(IAttendanceRepository attendanceRepository)
+    public AttendanceService(IAttendanceRepository attendanceRepository, IAuditLogService auditLogService)
     {
         _attendanceRepository = attendanceRepository;
+        _auditLogService = auditLogService;
     }
 
     public async Task CheckInAsync(CheckInRequest request, CancellationToken cancellationToken = default)
     {
-        if (request.EmployeeId == Guid.Empty)
-        {
-            throw new ArgumentException("EmployeeId is required.");
-        }
+        var employeeId = ValidationHelper.RequireGuid(request.EmployeeId, "EmployeeId");
 
         var now = DateTime.UtcNow;
 
-        var employeeExists = await _attendanceRepository.EmployeeExistsAsync(request.EmployeeId, cancellationToken);
+        var employeeExists = await _attendanceRepository.EmployeeExistsAsync(employeeId, cancellationToken);
         if (!employeeExists)
         {
             throw new InvalidOperationException("Employee not found.");
         }
 
-        var activeSession = await _attendanceRepository.GetActiveSessionAsync(request.EmployeeId, cancellationToken);
+        var activeSession = await _attendanceRepository.GetActiveSessionAsync(employeeId, cancellationToken);
         if (activeSession is not null)
         {
             throw new InvalidOperationException("Employee already has an active session.");
@@ -38,7 +39,7 @@ public class AttendanceService : IAttendanceService
         var session = new AttendanceSession
         {
             Id = Guid.NewGuid(),
-            EmployeeId = request.EmployeeId,
+            EmployeeId = employeeId,
             CheckInTime = now,
             Date = now.Date,
             CheckOutTime = null,
@@ -47,22 +48,21 @@ public class AttendanceService : IAttendanceService
 
         await _attendanceRepository.AddSessionAsync(session, cancellationToken);
         await _attendanceRepository.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.LogAsync(AuditActions.Create, AuditEntities.AttendanceSession, session.Id, "Attendance check-in", cancellationToken);
     }
 
     public async Task CheckOutAsync(CheckOutRequest request, CancellationToken cancellationToken = default)
     {
-        if (request.EmployeeId == Guid.Empty)
-        {
-            throw new ArgumentException("EmployeeId is required.");
-        }
+        var employeeId = ValidationHelper.RequireGuid(request.EmployeeId, "EmployeeId");
 
-        var employeeExists = await _attendanceRepository.EmployeeExistsAsync(request.EmployeeId, cancellationToken);
+        var employeeExists = await _attendanceRepository.EmployeeExistsAsync(employeeId, cancellationToken);
         if (!employeeExists)
         {
             throw new InvalidOperationException("Employee not found.");
         }
 
-        var activeSession = await _attendanceRepository.GetActiveSessionAsync(request.EmployeeId, cancellationToken);
+        var activeSession = await _attendanceRepository.GetActiveSessionAsync(employeeId, cancellationToken);
         if (activeSession is null)
         {
             throw new InvalidOperationException("No active session found.");
@@ -76,88 +76,100 @@ public class AttendanceService : IAttendanceService
         var now = DateTime.UtcNow;
         activeSession.CheckOutTime = now;
 
-        var policy = await _attendanceRepository.GetActivePolicyAsync(cancellationToken);
+        await _attendanceRepository.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.LogAsync(AuditActions.Update, AuditEntities.AttendanceSession, activeSession.Id, "Attendance check-out", cancellationToken);
+    }
+
+    public async Task<AttendanceRecordDto> GetDailySummaryAsync(Guid employeeId, DateTime date, CancellationToken cancellationToken = default)
+    {
+        var sessionDate = date.Date;
+        var sessions = await _attendanceRepository.GetSessionsByDateAsync(employeeId, sessionDate, cancellationToken);
+        var totalHours = AttendanceCalculator.CalculateTotalHours(sessions);
+
+        var policy = await _attendanceRepository.GetEffectivePolicyAsync(sessionDate, cancellationToken);
+
+        var status = AttendanceStatus.Absent;
+        if (policy is not null)
+        {
+            var hasLeave = await _attendanceRepository.HasApprovedLeaveAsync(employeeId, sessionDate, cancellationToken);
+            status = hasLeave ? AttendanceStatus.Leave : DetermineStatus(totalHours, policy);
+        }
+
+        return new AttendanceRecordDto
+        {
+            EmployeeId = employeeId,
+            Date = sessionDate,
+            TotalHours = totalHours,
+            Status = status.ToString()
+        };
+    }
+
+    public async Task<IReadOnlyList<AttendanceRecordDto>> GetAttendanceAsync(CancellationToken cancellationToken = default)
+    {
+        var sessions = await _attendanceRepository.GetAllSessionsAsync(cancellationToken);
+        var leaveRanges = await _attendanceRepository.GetApprovedLeaveRangesAsync(cancellationToken);
+        var leaveLookup = leaveRanges
+            .GroupBy(x => x.EmployeeId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Select(r => (r.Start, r.End)).OrderBy(r => r.Start).ToList());
+
+        var grouped = sessions.GroupBy(s => new { s.EmployeeId, s.Date });
+        var policy = await _attendanceRepository.GetEffectivePolicyAsync(DateTime.UtcNow.Date, cancellationToken);
         if (policy is null)
         {
             throw new InvalidOperationException("Attendance policy not configured.");
         }
 
-        var sessionDate = activeSession.Date;
-        var sessions = await _attendanceRepository.GetSessionsByDateAsync(request.EmployeeId, sessionDate, cancellationToken);
-
-        var totalHours = CalculateTotalHours(sessions);
-        var hasLeave = await _attendanceRepository.HasApprovedLeaveAsync(request.EmployeeId, sessionDate, cancellationToken);
-
-        var status = hasLeave 
-            ? AttendanceStatus.Leave 
-            : DetermineStatus(totalHours, policy);
-
-        var existingRecord = await _attendanceRepository.GetRecordByDateAsync(request.EmployeeId, sessionDate, cancellationToken);
-
-        if (existingRecord is not null)
+        var results = new List<AttendanceRecordDto>();
+        foreach (var group in grouped)
         {
-            existingRecord.TotalHours = totalHours;
-            existingRecord.Status = status;
-        }
-        else
-        {
-            var record = new AttendanceRecord
+            var empId = group.Key.EmployeeId;
+            var dt = group.Key.Date;
+            var totalHours = AttendanceCalculator.CalculateTotalHours(group);
+            var hasLeave = leaveLookup.TryGetValue(empId, out var ranges) && IsDateInRanges(ranges, dt.Date);
+            var status = hasLeave ? AttendanceStatus.Leave : DetermineStatus(totalHours, policy);
+
+            results.Add(new AttendanceRecordDto
             {
-                Id = Guid.NewGuid(),
-                EmployeeId = request.EmployeeId,
-                Date = sessionDate,
+                EmployeeId = empId,
+                Date = dt,
                 TotalHours = totalHours,
-                Status = status,
-                CreatedAt = now
-            };
-
-            await _attendanceRepository.AddRecordAsync(record, cancellationToken);
+                Status = status.ToString()
+            });
         }
 
-        await _attendanceRepository.SaveChangesAsync(cancellationToken);
+        return results.AsReadOnly();
     }
 
-    public async Task<IReadOnlyList<AttendanceRecordDto>> GetAttendanceAsync(CancellationToken cancellationToken = default)
+    private static bool IsDateInRanges(List<(DateTime Start, DateTime End)> ranges, DateTime date)
     {
-        var records = await _attendanceRepository.GetAllRecordsAsync(cancellationToken);
+        var target = date.Date;
 
-        return records
-            .Select(x => new AttendanceRecordDto
-            {
-                EmployeeId = x.EmployeeId,
-                Date = x.Date,
-                TotalHours = x.TotalHours,
-                Status = x.Status.ToString()
-            })
-            .ToList()
-            .AsReadOnly();
-    }
+        var low = 0;
+        var high = ranges.Count - 1;
 
-    private static decimal CalculateTotalHours(List<AttendanceSession> sessions)
-    {
-        decimal total = 0;
-
-        foreach (var session in sessions)
+        while (low <= high)
         {
-            if (session.CheckOutTime.HasValue)
+            var mid = low + ((high - low) / 2);
+            var range = ranges[mid];
+
+            if (target < range.Start)
             {
-                var duration = session.CheckOutTime.Value - session.CheckInTime;
-
-                if (duration.TotalSeconds <= 0)
-                {
-                    continue;
-                }
-
-                if (duration.TotalMinutes < 1)
-                {
-                    continue;
-                }
-
-                total += (decimal)duration.TotalHours;
+                high = mid - 1;
+            }
+            else if (target > range.End)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                return true;
             }
         }
 
-        return Math.Round(total, 2);
+        return false;
     }
 
     private static AttendanceStatus DetermineStatus(decimal totalHours, AttendancePolicy policy)

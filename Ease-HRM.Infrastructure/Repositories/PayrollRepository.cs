@@ -15,39 +15,62 @@ public class PayrollRepository : IPayrollRepository
         _context = context;
     }
 
-    public Task<SalaryStructure?> GetActiveSalaryAsync(Guid employeeId, CancellationToken cancellationToken = default)
+    public Task<SalaryStructure?> GetEffectiveSalaryAsync(Guid employeeId, DateTime date, CancellationToken cancellationToken = default)
     {
+        var targetDate = date.Date;
+
         return _context.SalaryStructures
             .AsNoTracking()
-            .Where(x => x.EmployeeId == employeeId && x.IsActive)
+            .Where(x =>
+                x.EmployeeId == employeeId)
+                .Where(x => x.EffectiveFrom <= targetDate &&
+                (!x.EffectiveTo.HasValue || x.EffectiveTo.Value >= targetDate))
             .OrderByDescending(x => x.EffectiveFrom)
+            .ThenByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public Task<List<AttendanceRecord>> GetAttendanceAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default)
+    public Task<List<AttendanceSession>> GetAttendanceAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default)
     {
-        return _context.AttendanceRecords
+        var start = new DateTime(year, month, 1);
+        var end = start.AddMonths(1);
+
+        return _context.AttendanceSessions
             .AsNoTracking()
             .Where(x =>
                 x.EmployeeId == employeeId &&
-                x.Date.Year == year &&
-                x.Date.Month == month)
+                x.Date >= start &&
+                x.Date < end)
             .OrderBy(x => x.Date)
             .ToListAsync(cancellationToken);
+    }
+
+    public Task<AttendancePolicy?> GetEffectiveAttendancePolicyAsync(DateTime date, CancellationToken cancellationToken = default)
+    {
+        var targetDate = date.Date;
+
+        return _context.AttendancePolicies
+            .AsNoTracking()
+            .Where(x =>
+                x.EffectiveFrom <= targetDate &&
+                (!x.EffectiveTo.HasValue || x.EffectiveTo.Value >= targetDate))
+            .OrderByDescending(x => x.EffectiveFrom)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public Task<List<LeaveRequest>> GetLeavesAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default)
     {
         var startOfMonth = new DateTime(year, month, 1);
-        var endOfMonth = startOfMonth.AddMonths(1).AddDays(-1);
+        var endExclusive = startOfMonth.AddMonths(1);
 
         return _context.LeaveRequests
             .AsNoTracking()
             .Where(x =>
                 x.EmployeeId == employeeId &&
                 x.Status == LeaveStatus.Approved &&
-                x.StartDate.Date <= endOfMonth &&
-                x.EndDate.Date >= startOfMonth)
+                x.StartDate < endExclusive &&
+                x.EndDate >= startOfMonth)
             .ToListAsync(cancellationToken);
     }
 
@@ -88,21 +111,56 @@ public class PayrollRepository : IPayrollRepository
         await _context.SalaryStructures.AddAsync(salaryStructure, cancellationToken);
     }
 
-    public async Task DeactivateSalaryStructuresAsync(Guid employeeId, CancellationToken cancellationToken = default)
+    public Task<SalaryStructure?> GetSalaryStructureByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var active = await _context.SalaryStructures
-            .Where(x => x.EmployeeId == employeeId && x.IsActive)
-            .ToListAsync(cancellationToken);
+        return _context.SalaryStructures
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+    }
 
-        foreach (var salary in active)
-        {
-            salary.IsActive = false;
-        }
+    public Task<bool> HasOverlappingSalaryStructureAsync(
+        Guid employeeId,
+        DateTime effectiveFrom,
+        DateTime? effectiveTo,
+        Guid? excludeSalaryStructureId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var newStart = effectiveFrom.Date;
+        var newEnd = (effectiveTo ?? DateTime.MaxValue).Date;
+
+        return _context.SalaryStructures
+            .AsNoTracking()
+            .Where(x => x.EmployeeId == employeeId)
+            .Where(x => !excludeSalaryStructureId.HasValue || x.Id != excludeSalaryStructureId.Value)
+            .AnyAsync(x => 
+                x.EffectiveFrom <= newEnd && 
+                (x.EffectiveTo ?? DateTime.MaxValue) >= newStart, 
+                cancellationToken);
     }
 
     public async Task AddPayrollAsync(Payroll payroll, CancellationToken cancellationToken = default)
     {
         await _context.Payrolls.AddAsync(payroll, cancellationToken);
+    }
+
+    public async Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            await operation(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)

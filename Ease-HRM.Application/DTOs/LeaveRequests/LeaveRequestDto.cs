@@ -10,6 +10,7 @@ public class LeaveRequestDto
     public string Status { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public DateTime AppliedOn { get; set; }
+    public Guid? CurrentApproverId { get; set; }
     public Guid? ApprovedBy { get; set; }
     public DateTime? ApprovedOn { get; set; }
 }

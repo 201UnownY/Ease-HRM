@@ -1,4 +1,5 @@
 using Ease_HRM.Domain.Entities;
+using Ease_HRM.Application.Constants;
 using Ease_HRM.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,8 +11,34 @@ public static class PermissionSeeder
     {
         var permissions = new[]
         {
-            "userrole.view",
-            "rolepermission.view"
+            Permissions.User.Create,
+            Permissions.User.View,
+            Permissions.Role.Create,
+            Permissions.Role.View,
+            Permissions.Permission.Create,
+            Permissions.Permission.View,
+            Permissions.UserRole.Assign,
+            Permissions.UserRole.View,
+            Permissions.RolePermission.Assign,
+            Permissions.RolePermission.View,
+            Permissions.OrgUnit.Create,
+            Permissions.OrgUnit.View,
+            Permissions.Employee.Create,
+            Permissions.Employee.View,
+            Permissions.Employee.Update,
+            Permissions.LeaveType.Create,
+            Permissions.LeaveType.View,
+            Permissions.Leave.Apply,
+            Permissions.Leave.Approve,
+            Permissions.Leave.Reject,
+            Permissions.Leave.View,
+            Permissions.Attendance.CheckIn,
+            Permissions.Attendance.CheckOut,
+            Permissions.Attendance.ManagePolicy,
+            Permissions.Attendance.View,
+            Permissions.Payroll.Generate,
+            Permissions.Payroll.View,
+            Permissions.Payroll.ManageSalaryStructure
         };
 
         var now = DateTime.UtcNow;
@@ -32,6 +59,13 @@ public static class PermissionSeeder
             }
         }
 
-        await context.SaveChangesAsync();
+        try
+        {
+            await context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // ignore duplicate insert race
+        }
     }
 }

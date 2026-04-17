@@ -1,5 +1,7 @@
 using Ease_HRM.Application.DTOs.Users;
+using Ease_HRM.Application.Constants;
 using Ease_HRM.Application.Interfaces;
+using Ease_HRM.Application.Helpers;
 using Ease_HRM.Domain.Entities;
 using BCrypt.Net;
 
@@ -9,26 +11,19 @@ public class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IAuditLogService _auditLogService;
 
-    public UserService(IUserRepository userRepository, ICurrentUserService currentUserService)
+    public UserService(IUserRepository userRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService)
     {
         _userRepository = userRepository;
         _currentUserService = currentUserService;
+        _auditLogService = auditLogService;
     }
 
     public async Task<UserDto> CreateAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-
-        if (string.IsNullOrWhiteSpace(normalizedEmail))
-        {
-            throw new ArgumentException("Email is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Password))
-        {
-            throw new ArgumentException("Password is required.");
-        }
+        var normalizedEmail = ValidationHelper.NormalizeEmail(request.Email);
+        var password = ValidationHelper.RequireString(request.Password, "Password");
 
         var exists = await _userRepository.EmailExistsAsync(normalizedEmail, cancellationToken);
         if (exists)
@@ -43,7 +38,7 @@ public class UserService : IUserService
         {
             Id = Guid.NewGuid(),
             Email = normalizedEmail,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
             IsActive = true,
             CreatedAt = now,
             CreatedBy = userId,
@@ -53,6 +48,8 @@ public class UserService : IUserService
 
         await _userRepository.AddAsync(user, cancellationToken);
         await _userRepository.SaveChangesAsync(cancellationToken);
+
+        await _auditLogService.LogAsync(AuditActions.Create, AuditEntities.User, user.Id, $"User created: {user.Email}", cancellationToken);
 
         return ToDto(user);
     }

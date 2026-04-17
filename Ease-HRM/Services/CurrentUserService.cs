@@ -6,10 +6,12 @@ namespace Ease_HRM.Api.Services;
 public class CurrentUserService : ICurrentUserService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IUserRoleRepository _userRoleRepository;
 
-    public CurrentUserService(IHttpContextAccessor httpContextAccessor)
+    public CurrentUserService(IHttpContextAccessor httpContextAccessor, IUserRoleRepository userRoleRepository)
     {
         _httpContextAccessor = httpContextAccessor;
+        _userRoleRepository = userRoleRepository;
     }
 
     private ClaimsPrincipal? User => _httpContextAccessor.HttpContext?.User;
@@ -41,16 +43,21 @@ public class CurrentUserService : ICurrentUserService
         }
     }
 
-    public string? Role
+    public async Task<IReadOnlyList<string>> GetRolesAsync(CancellationToken cancellationToken = default)
     {
-        get
+        var userId = UserId;
+        if (!userId.HasValue)
         {
-            if (User?.Identity?.IsAuthenticated != true)
-            {
-                return null;
-            }
-
-            return User.FindFirstValue(ClaimTypes.Role);
+            return Array.Empty<string>();
         }
+
+        var roleNames = await _userRoleRepository.GetUserRoleNamesAsync(userId.Value, cancellationToken);
+
+        return roleNames
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList()
+            .AsReadOnly();
     }
 }
