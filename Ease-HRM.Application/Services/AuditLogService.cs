@@ -18,7 +18,7 @@ public class AuditLogService : IAuditLogService
     {
         if (string.IsNullOrWhiteSpace(action) || string.IsNullOrWhiteSpace(entityName))
         {
-            return;
+            throw new ArgumentException("Invalid audit log parameters.");
         }
 
         var log = new AuditLog
@@ -32,14 +32,7 @@ public class AuditLogService : IAuditLogService
             PerformedAt = DateTime.UtcNow
         };
 
-        try
-        {
-            await _auditLogRepository.AddAsync(log, cancellationToken);
-            await _auditLogRepository.SaveChangesAsync(cancellationToken);
-        }
-        catch
-        {
-            // Audit must never break business flow.
-        }
+        await _auditLogRepository.AddAsync(log, cancellationToken);
+        await _auditLogRepository.SaveChangesAsync(cancellationToken);
     }
 }

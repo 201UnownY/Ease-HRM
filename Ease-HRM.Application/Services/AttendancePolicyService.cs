@@ -21,16 +21,7 @@ public class AttendancePolicyService : IAttendancePolicyService
 
     public async Task<AttendancePolicy> CreateAsync(CreateAttendancePolicyRequest request, CancellationToken cancellationToken = default)
     {
-        ValidateHours(request.FullDayHours, request.HalfDayHours);
-
         var effectiveFrom = request.EffectiveFrom.Date;
-
-        var overlap = await _attendanceRepository.HasOverlappingPolicyAsync(effectiveFrom, null, null, cancellationToken);
-        if (overlap)
-        {
-            throw new InvalidOperationException("Overlapping attendance policy exists.");
-        }
-
         var now = DateTime.UtcNow;
         var actorId = _currentUserService.UserId ?? Guid.Empty;
 
@@ -48,10 +39,20 @@ public class AttendancePolicyService : IAttendancePolicyService
             ChangeReason = string.IsNullOrWhiteSpace(request.ChangeReason) ? "Initial creation" : request.ChangeReason.Trim()
         };
 
-        await _attendanceRepository.AddPolicyAsync(policy, cancellationToken);
-        await _attendanceRepository.SaveChangesAsync(cancellationToken);
+        policy.ValidateVersioning();
 
-        await _auditLogService.LogAsync(AuditActions.Create, AuditEntities.AttendancePolicy, policy.Id, "Attendance policy created", cancellationToken);
+        await _attendanceRepository.ExecuteInTransactionAsync(async ct =>
+        {
+            var overlap = await _attendanceRepository.HasOverlappingPolicyAsync(effectiveFrom, null, null, ct);
+            if (overlap)
+            {
+                throw new InvalidOperationException("Overlapping attendance policy exists.");
+            }
+
+            await _attendanceRepository.AddPolicyAsync(policy, ct);
+            await _attendanceRepository.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync(AuditActions.Create, AuditEntities.AttendancePolicy, policy.Id, "Attendance policy created", ct);
+        }, cancellationToken);
 
         return policy;
     }
@@ -59,7 +60,6 @@ public class AttendancePolicyService : IAttendancePolicyService
     public async Task<AttendancePolicy> UpdateAsync(UpdateAttendancePolicyRequest request, CancellationToken cancellationToken = default)
     {
         var policyId = ValidationHelper.RequireGuid(request.PolicyId, nameof(request.PolicyId));
-        ValidateHours(request.FullDayHours, request.HalfDayHours);
 
         var existing = await _attendanceRepository.GetPolicyByIdAsync(policyId, cancellationToken)
             ?? throw new InvalidOperationException("Attendance policy not found.");
@@ -95,26 +95,18 @@ public class AttendancePolicyService : IAttendancePolicyService
             ChangeReason = reason
         };
 
+        newPolicy.ValidateVersioning();
+
         await _attendanceRepository.ExecuteInTransactionAsync(async ct =>
         {
+            await _attendanceRepository.SaveChangesAsync(ct);
             await _attendanceRepository.AddPolicyAsync(newPolicy, ct);
             await _attendanceRepository.SaveChangesAsync(ct);
+
+            var details = $"AttendancePolicy updated (OldId: {existing.Id} → NewId: {newPolicy.Id}, Reason: {reason})";
+            await _auditLogService.LogAsync(AuditActions.Update, AuditEntities.AttendancePolicy, newPolicy.Id, details, ct);
         }, cancellationToken);
 
-        var details = $"AttendancePolicy updated (OldId: {existing.Id} → NewId: {newPolicy.Id}, Reason: {reason})";
-        await _auditLogService.LogAsync(AuditActions.Update, AuditEntities.AttendancePolicy, newPolicy.Id, details, cancellationToken);
-
         return newPolicy;
-    }
-
-    private static void ValidateHours(decimal fullDayHours, decimal halfDayHours)
-    {
-        ValidationHelper.EnsurePositive(fullDayHours, nameof(fullDayHours));
-        ValidationHelper.EnsurePositive(halfDayHours, nameof(halfDayHours));
-
-        if (halfDayHours >= fullDayHours)
-        {
-            throw new ArgumentException("Half-day hours must be less than full-day hours.");
-        }
     }
 }

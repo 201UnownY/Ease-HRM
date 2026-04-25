@@ -1,9 +1,9 @@
+using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.Users;
 using Ease_HRM.Application.Constants;
 using Ease_HRM.Application.Interfaces;
 using Ease_HRM.Application.Helpers;
 using Ease_HRM.Domain.Entities;
-using BCrypt.Net;
 
 namespace Ease_HRM.Application.Services;
 
@@ -12,24 +12,22 @@ public class UserService : IUserService
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IExceptionTranslator _exceptionTranslator;
+    private readonly IPasswordHasher _passwordHasher;
 
-    public UserService(IUserRepository userRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService)
+    public UserService(IUserRepository userRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService, IExceptionTranslator exceptionTranslator, IPasswordHasher passwordHasher)
     {
         _userRepository = userRepository;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _exceptionTranslator = exceptionTranslator;
+        _passwordHasher = passwordHasher;
     }
 
     public async Task<UserDto> CreateAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = ValidationHelper.NormalizeEmail(request.Email);
         var password = ValidationHelper.RequireString(request.Password, "Password");
-
-        var exists = await _userRepository.EmailExistsAsync(normalizedEmail, cancellationToken);
-        if (exists)
-        {
-            throw new InvalidOperationException("Email already exists.");
-        }
 
         var now = DateTime.UtcNow;
         var userId = _currentUserService.UserId ?? Guid.Empty;
@@ -38,7 +36,7 @@ public class UserService : IUserService
         {
             Id = Guid.NewGuid(),
             Email = normalizedEmail,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+            PasswordHash = _passwordHasher.Hash(password),
             IsActive = true,
             CreatedAt = now,
             CreatedBy = userId,
@@ -46,8 +44,15 @@ public class UserService : IUserService
             UpdatedBy = userId
         };
 
-        await _userRepository.AddAsync(user, cancellationToken);
-        await _userRepository.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _userRepository.AddAsync(user, cancellationToken);
+            await _userRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException("Duplicate record detected.");
+        }
 
         await _auditLogService.LogAsync(AuditActions.Create, AuditEntities.User, user.Id, $"User created: {user.Email}", cancellationToken);
 

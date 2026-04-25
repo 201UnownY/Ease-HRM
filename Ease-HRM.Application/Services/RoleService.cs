@@ -1,3 +1,4 @@
+using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.Roles;
 using Ease_HRM.Application.Constants;
 using Ease_HRM.Application.Interfaces;
@@ -11,22 +12,19 @@ public class RoleService : IRoleService
     private readonly IRoleRepository _roleRepository;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IExceptionTranslator _exceptionTranslator;
 
-    public RoleService(IRoleRepository roleRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService)
+    public RoleService(IRoleRepository roleRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService, IExceptionTranslator exceptionTranslator)
     {
         _roleRepository = roleRepository;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _exceptionTranslator = exceptionTranslator;
     }
 
     public async Task<RoleDto> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken = default)
     {
         var normalizedName = StringHelper.Normalize(request.Name, "Role name");
-
-        if (await _roleRepository.NameExistsAsync(normalizedName, cancellationToken))
-        {
-            throw new InvalidOperationException("Role name already exists.");
-        }
 
         var now = DateTime.UtcNow;
         var userId = _currentUserService.UserId ?? Guid.Empty;
@@ -42,8 +40,15 @@ public class RoleService : IRoleService
             UpdatedBy = userId
         };
 
-        await _roleRepository.AddAsync(role, cancellationToken);
-        await _roleRepository.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _roleRepository.AddAsync(role, cancellationToken);
+            await _roleRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException("Duplicate record detected.");
+        }
 
         await _auditLogService.LogAsync(AuditActions.Create, AuditEntities.Role, role.Id, $"Role created: {role.Name}", cancellationToken);
 

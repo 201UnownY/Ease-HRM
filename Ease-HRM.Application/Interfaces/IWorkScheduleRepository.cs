@@ -13,4 +13,5 @@ public interface IWorkScheduleRepository
     Task AddAsync(WorkSchedule schedule, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
     Task<bool> HasOverlappingScheduleAsync(Guid? employeeId, Guid? orgUnitId, DateTime effectiveFrom, DateTime? effectiveTo, Guid? excludeScheduleId = null, CancellationToken cancellationToken = default);
+    Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default);
 }

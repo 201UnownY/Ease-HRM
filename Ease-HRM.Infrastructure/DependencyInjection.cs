@@ -1,6 +1,8 @@
-﻿using Ease_HRM.Application.Interfaces;
+﻿using Ease_HRM.Application.Common.Interfaces;
+using Ease_HRM.Application.Interfaces;
 using Ease_HRM.Infrastructure.Data;
 using Ease_HRM.Infrastructure.Repositories;
+using Ease_HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +16,8 @@ public static class DependencyInjection
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
+        services.AddScoped<IExceptionTranslator, ExceptionTranslator>();
+        services.AddScoped<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IPermissionRepository, PermissionRepository>();

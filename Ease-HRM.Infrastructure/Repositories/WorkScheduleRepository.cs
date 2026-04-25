@@ -69,9 +69,8 @@ public class WorkScheduleRepository : IWorkScheduleRepository
         var schedules = await _context.Set<WorkSchedule>()
             .AsNoTracking()
             .Where(ScopeFilter(employeeId, orgUnitId))
-            .Where(x =>
-                x.EffectiveFrom < monthEndExclusive &&
-                (!x.EffectiveTo.HasValue || x.EffectiveTo.Value >= monthStart))
+            .Where(x => x.EffectiveFrom < monthEndExclusive)
+            .Where(x => x.EffectiveTo == null || x.EffectiveTo >= monthStart)
             .ToListAsync(cancellationToken);
 
         var result = new Dictionary<DateTime, decimal>();
@@ -151,6 +150,22 @@ public class WorkScheduleRepository : IWorkScheduleRepository
                 x.EffectiveFrom <= newEnd &&
                 (x.EffectiveTo ?? DateTime.MaxValue) >= newStart,
                 cancellationToken);
+    }
+
+    public async Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            await operation(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     private static bool MatchesScope(WorkSchedule schedule, Guid employeeId, Guid? orgUnitId)

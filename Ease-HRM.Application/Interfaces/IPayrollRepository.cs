@@ -10,6 +10,7 @@ public interface IPayrollRepository
     Task<List<LeaveRequest>> GetLeavesAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default);
     Task<List<LeaveType>> GetLeaveTypesAsync(List<Guid> leaveTypeIds, CancellationToken cancellationToken = default);
     Task<List<Payroll>> GetPayrollsAsync(Guid employeeId, CancellationToken cancellationToken = default);
+    Task<Payroll?> GetPayrollAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default);
     Task<bool> PayrollExistsAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default);
     Task<bool> EmployeeExistsAsync(Guid employeeId, CancellationToken cancellationToken = default);
     Task AddSalaryStructureAsync(SalaryStructure salaryStructure, CancellationToken cancellationToken = default);

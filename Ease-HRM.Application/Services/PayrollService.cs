@@ -1,3 +1,4 @@
+using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.Payroll;
 using Ease_HRM.Application.Constants;
 using Ease_HRM.Application.Helpers;
@@ -13,13 +14,15 @@ public class PayrollService : IPayrollService
     private readonly IWorkScheduleRepository _workScheduleRepository;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IExceptionTranslator _exceptionTranslator;
 
-    public PayrollService(IPayrollRepository payrollRepository, IWorkScheduleRepository workScheduleRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService)
+    public PayrollService(IPayrollRepository payrollRepository, IWorkScheduleRepository workScheduleRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService, IExceptionTranslator exceptionTranslator)
     {
         _payrollRepository = payrollRepository;
         _workScheduleRepository = workScheduleRepository;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _exceptionTranslator = exceptionTranslator;
     }
 
     public async Task<SalaryStructureDto> CreateSalaryStructureAsync(CreateSalaryStructureRequest request, CancellationToken cancellationToken = default)
@@ -37,22 +40,8 @@ public class PayrollService : IPayrollService
         }
 
         var effectiveFrom = DateTime.UtcNow.Date;
-
-        var hasOverlap = await _payrollRepository.HasOverlappingSalaryStructureAsync(
-            request.EmployeeId,
-            effectiveFrom,
-            null,
-            null,
-            cancellationToken);
-
-        if (hasOverlap)
-        {
-            throw new InvalidOperationException("Overlapping salary structure exists for this employee.");
-        }
-
         var actorId = _currentUserService.UserId ?? Guid.Empty;
         var changeReason = "Initial salary structure created";
-
         var now = DateTime.UtcNow;
 
         var salaryStructure = new SalaryStructure
@@ -72,15 +61,29 @@ public class PayrollService : IPayrollService
             ChangeReason = changeReason
         };
 
-        await _payrollRepository.AddSalaryStructureAsync(salaryStructure, cancellationToken);
-        await _payrollRepository.SaveChangesAsync(cancellationToken);
+        await _payrollRepository.ExecuteInTransactionAsync(async ct =>
+        {
+            var hasOverlap = await _payrollRepository.HasOverlappingSalaryStructureAsync(
+                request.EmployeeId,
+                effectiveFrom,
+                null,
+                null,
+                ct);
 
-        await _auditLogService.LogAsync(
-            AuditActions.Create,
-            AuditEntities.SalaryStructure,
-            salaryStructure.Id,
-            $"Salary structure created for employee {request.EmployeeId}",
-            cancellationToken);
+            if (hasOverlap)
+            {
+                throw new InvalidOperationException("Overlapping salary structure exists for this employee.");
+            }
+
+            await _payrollRepository.AddSalaryStructureAsync(salaryStructure, ct);
+            await _payrollRepository.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync(
+                AuditActions.Create,
+                AuditEntities.SalaryStructure,
+                salaryStructure.Id,
+                $"Salary structure created for employee {request.EmployeeId}",
+                ct);
+        }, cancellationToken);
 
         return new SalaryStructureDto
         {
@@ -113,26 +116,9 @@ public class PayrollService : IPayrollService
             throw new InvalidOperationException("New effective date must be after current version.");
         }
 
-        var overlap = await _payrollRepository.HasOverlappingSalaryStructureAsync(
-            existing.EmployeeId,
-            effectiveFrom,
-            null,
-            salaryStructureId,
-            cancellationToken);
-
-        if (overlap)
-        {
-            throw new InvalidOperationException("Overlapping salary structure exists for this employee.");
-        }
-
         var actorId = _currentUserService.UserId ?? Guid.Empty;
         var now = DateTime.UtcNow;
         var reason = string.IsNullOrWhiteSpace(request.ChangeReason) ? "Salary structure updated" : request.ChangeReason.Trim();
-
-        existing.EffectiveTo = effectiveFrom.AddDays(-1);
-        existing.UpdatedAt = now;
-        existing.UpdatedBy = actorId;
-        existing.ChangeReason = "Superseded by new version";
 
         var newVersion = new SalaryStructure
         {
@@ -153,12 +139,28 @@ public class PayrollService : IPayrollService
 
         await _payrollRepository.ExecuteInTransactionAsync(async ct =>
         {
+            var overlap = await _payrollRepository.HasOverlappingSalaryStructureAsync(
+                existing.EmployeeId,
+                effectiveFrom,
+                null,
+                salaryStructureId,
+                ct);
+
+            if (overlap)
+            {
+                throw new InvalidOperationException("Overlapping salary structure exists for this employee.");
+            }
+
+            existing.Supersede(effectiveFrom, actorId);
+            existing.ValidateVersioning();
+
+            await _payrollRepository.SaveChangesAsync(ct);
             await _payrollRepository.AddSalaryStructureAsync(newVersion, ct);
             await _payrollRepository.SaveChangesAsync(ct);
-        }, cancellationToken);
 
-        var details = $"SalaryStructure updated (OldId: {existing.Id} → NewId: {newVersion.Id}, Reason: {reason})";
-        await _auditLogService.LogAsync(AuditActions.Update, AuditEntities.SalaryStructure, newVersion.Id, details, cancellationToken);
+            var details = $"SalaryStructure updated (OldId: {existing.Id} → NewId: {newVersion.Id}, Reason: {reason})";
+            await _auditLogService.LogAsync(AuditActions.Update, AuditEntities.SalaryStructure, newVersion.Id, details, ct);
+        }, cancellationToken);
 
         return new SalaryStructureDto
         {
@@ -216,9 +218,8 @@ public class PayrollService : IPayrollService
             throw new InvalidOperationException("Invalid working day units in work schedule.");
         }
 
-        var perDaySalary = gross / totalWorkingDayUnits;
+        var perDaySalary = Math.Round(gross / totalWorkingDayUnits, 4);
 
-        // Build attendance date to status mapping for O(1) lookup
         var attendanceDateMap = new Dictionary<DateTime, AttendanceStatus>();
         var sessionsGroupedByDate = attendanceSessions.GroupBy(x => x.Date);
 
@@ -235,7 +236,6 @@ public class PayrollService : IPayrollService
             attendanceDateMap[group.Key] = status;
         }
 
-        // Get leave metadata
         var leaveTypeIds = leaveRequests.Select(x => x.LeaveTypeId).Distinct().ToList();
         var leaveTypes = await _payrollRepository.GetLeaveTypesAsync(leaveTypeIds, cancellationToken);
         if (leaveTypes.Count != leaveTypeIds.Count)
@@ -279,14 +279,32 @@ public class PayrollService : IPayrollService
             {
                 await _payrollRepository.AddPayrollAsync(payroll, ct);
                 await _payrollRepository.SaveChangesAsync(ct);
+                await _auditLogService.LogAsync(AuditActions.Generate, AuditEntities.Payroll, payroll.Id, $"Payroll generated for employee {employeeId} ({month}/{year})", ct);
             }, cancellationToken);
         }
-        catch (Exception ex) when (string.Equals(ex.GetType().Name, "DbUpdateException", StringComparison.Ordinal))
+        catch (Exception ex) when (_exceptionTranslator.IsUniqueConstraintViolation(ex))
         {
-            throw new InvalidOperationException("Payroll already generated for this employee in the specified month.");
-        }
+            var existing = await _payrollRepository.GetPayrollAsync(employeeId, year, month, cancellationToken);
+            if (existing != null)
+            {
+                return new PayrollDto
+                {
+                    Id = existing.Id,
+                    EmployeeId = existing.EmployeeId,
+                    Year = existing.Year,
+                    Month = existing.Month,
+                    BaseSalary = existing.BaseSalary,
+                    HRA = existing.HRA,
+                    Allowances = existing.Allowances,
+                    LeaveDeduction = Math.Round(existing.LeaveDeduction, 2, MidpointRounding.AwayFromZero),
+                    AttendanceDeduction = Math.Round(existing.AttendanceDeduction, 2, MidpointRounding.AwayFromZero),
+                    NetSalary = Math.Round(existing.NetSalary, 2, MidpointRounding.AwayFromZero),
+                    GeneratedAt = existing.GeneratedAt
+                };
+            }
 
-        await _auditLogService.LogAsync(AuditActions.Generate, AuditEntities.Payroll, payroll.Id, $"Payroll generated for employee {employeeId} ({month}/{year})", cancellationToken);
+            throw;
+        }
 
         return new PayrollDto
         {

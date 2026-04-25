@@ -1,3 +1,4 @@
+using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.LeaveRequests;
 using Ease_HRM.Application.Helpers;
 using Ease_HRM.Application.Interfaces;
@@ -12,12 +13,14 @@ public class LeaveRequestService : ILeaveRequestService
     private readonly ILeaveRequestRepository _leaveRequestRepository;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IExceptionTranslator _exceptionTranslator;
 
-    public LeaveRequestService(ILeaveRequestRepository leaveRequestRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService)
+    public LeaveRequestService(ILeaveRequestRepository leaveRequestRepository, ICurrentUserService currentUserService, IAuditLogService auditLogService, IExceptionTranslator exceptionTranslator)
     {
         _leaveRequestRepository = leaveRequestRepository;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _exceptionTranslator = exceptionTranslator;
     }
 
     public async Task<LeaveRequestDto> ApplyLeaveAsync(ApplyLeaveRequest request, CancellationToken cancellationToken = default)
@@ -84,15 +87,17 @@ public class LeaveRequestService : ILeaveRequestService
             IsDeleted = false
         };
 
-        await _leaveRequestRepository.AddAsync(leaveRequest, cancellationToken);
-        await _leaveRequestRepository.SaveChangesAsync(cancellationToken);
-
-        await _auditLogService.LogAsync(
-            AuditActions.Create,
-            AuditEntities.LeaveRequest,
-            leaveRequest.Id,
-            "Leave request applied",
-            cancellationToken);
+        await _leaveRequestRepository.ExecuteInTransactionAsync(async ct =>
+        {
+            await _leaveRequestRepository.AddAsync(leaveRequest, ct);
+            await _leaveRequestRepository.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync(
+                AuditActions.Create,
+                AuditEntities.LeaveRequest,
+                leaveRequest.Id,
+                "Leave request applied",
+                ct);
+        }, cancellationToken);
 
         return new LeaveRequestDto
         {
@@ -216,35 +221,42 @@ public class LeaveRequestService : ILeaveRequestService
             leaveRequest.CurrentApproverId = null;
         }
 
-        await _leaveRequestRepository.ExecuteInTransactionAsync(async ct =>
+        try
         {
-            if (leaveRequest.Status == LeaveStatus.Approved)
+            await _leaveRequestRepository.ExecuteInTransactionAsync(async ct =>
             {
-                var balance = await _leaveRequestRepository.GetLeaveBalanceAsync(
-                    leaveRequest.EmployeeId,
-                    leaveRequest.LeaveTypeId,
-                    leaveRequest.StartDate.Year,
-                    ct);
-
-                if (balance != null)
+                if (leaveRequest.Status == LeaveStatus.Approved)
                 {
-                    var duration = CalculateLeaveDays(leaveRequest.StartDate, leaveRequest.EndDate);
+                    var balance = await _leaveRequestRepository.GetLeaveBalanceAsync(
+                        leaveRequest.EmployeeId,
+                        leaveRequest.LeaveTypeId,
+                        leaveRequest.StartDate.Year,
+                        ct);
 
-                    if (balance.Used + duration > balance.Allocated + balance.CarryForward)
+                    if (balance != null)
                     {
-                        throw new InvalidOperationException("Insufficient leave balance.");
+                        var duration = CalculateLeaveDays(leaveRequest.StartDate, leaveRequest.EndDate);
+
+                        if (balance.Used + duration > balance.Allocated + balance.CarryForward)
+                        {
+                            throw new InvalidOperationException("Insufficient leave balance.");
+                        }
+
+                        balance.Used += duration;
                     }
-
-                    balance.Used += duration;
                 }
-            }
 
-            await _leaveRequestRepository.SaveChangesAsync(ct);
-        }, cancellationToken);
+                await _leaveRequestRepository.SaveChangesAsync(ct);
 
-        if (leaveRequest.Status == LeaveStatus.Approved)
+                if (leaveRequest.Status == LeaveStatus.Approved)
+                {
+                    await _auditLogService.LogAsync(AuditActions.Approve, AuditEntities.LeaveRequest, leaveRequest.Id, "Leave request approved", ct);
+                }
+            }, cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsConcurrencyConflict(ex))
         {
-            await _auditLogService.LogAsync(AuditActions.Approve, AuditEntities.LeaveRequest, leaveRequest.Id, "Leave request approved", cancellationToken);
+            throw new InvalidOperationException("Leave balance was modified by another operation. Please retry.");
         }
 
         return new LeaveRequestDto
@@ -315,9 +327,11 @@ public class LeaveRequestService : ILeaveRequestService
         leaveRequest.ApprovedBy = approverEmp?.Id;
         leaveRequest.ApprovedOn = DateTime.UtcNow;
 
-        await _leaveRequestRepository.SaveChangesAsync(cancellationToken);
-
-        await _auditLogService.LogAsync(AuditActions.Reject, AuditEntities.LeaveRequest, leaveRequest.Id, "Leave request rejected", cancellationToken);
+        await _leaveRequestRepository.ExecuteInTransactionAsync(async ct =>
+        {
+            await _leaveRequestRepository.SaveChangesAsync(ct);
+            await _auditLogService.LogAsync(AuditActions.Reject, AuditEntities.LeaveRequest, leaveRequest.Id, "Leave request rejected", ct);
+        }, cancellationToken);
 
         return new LeaveRequestDto
         {

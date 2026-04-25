@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Ease_HRM.Domain.Entities;
 
 public class LeaveBalance
@@ -9,4 +11,7 @@ public class LeaveBalance
     public decimal Allocated { get; set; }
     public decimal Used { get; set; }
     public decimal CarryForward { get; set; }
+
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = default!;
 }

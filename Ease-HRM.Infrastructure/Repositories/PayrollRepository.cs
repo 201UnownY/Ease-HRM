@@ -92,6 +92,18 @@ public class PayrollRepository : IPayrollRepository
             .ToListAsync(cancellationToken);
     }
 
+    public Task<Payroll?> GetPayrollAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        return _context.Payrolls
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x =>
+                x.EmployeeId == employeeId &&
+                x.Year == year &&
+                x.Month == month &&
+                !x.IsDeleted,
+                cancellationToken);
+    }
+
     public Task<bool> PayrollExistsAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default)
     {
         return _context.Payrolls.AnyAsync(x =>

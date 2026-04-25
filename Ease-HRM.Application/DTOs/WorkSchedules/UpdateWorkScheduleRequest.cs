@@ -13,7 +13,6 @@ public class UpdateWorkScheduleRequest
     public decimal SaturdayWeight { get; set; }
     public decimal SundayWeight { get; set; }
 
-    public bool IsActive { get; set; }
     public string? ShiftCode { get; set; }
     public string? ChangeReason { get; set; }
 }

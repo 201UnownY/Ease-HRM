@@ -18,4 +18,30 @@ public class SalaryStructure
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedBy { get; set; }
+
+    public void ValidateVersioning()
+    {
+        if (EffectiveFrom == default)
+        {
+            throw new InvalidOperationException("EffectiveFrom is required.");
+        }
+
+        if (EffectiveTo.HasValue && EffectiveTo.Value.Date < EffectiveFrom.Date)
+        {
+            throw new InvalidOperationException("EffectiveTo cannot be before EffectiveFrom.");
+        }
+    }
+
+    public void Supersede(DateTime newEffectiveFrom, Guid actorId)
+    {
+        if (newEffectiveFrom.Date <= EffectiveFrom.Date)
+        {
+            throw new InvalidOperationException("New effective date must be after current version.");
+        }
+
+        EffectiveTo = newEffectiveFrom.Date.AddDays(-1);
+        UpdatedAt = DateTime.UtcNow;
+        UpdatedBy = actorId;
+        ChangeReason = "Superseded by new version";
+    }
 }

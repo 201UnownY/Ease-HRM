@@ -371,6 +371,8 @@ public class AppDbContext : DbContext
             entity.Property(x => x.Allocated).IsRequired();
             entity.Property(x => x.Used).IsRequired();
             entity.Property(x => x.CarryForward).IsRequired();
+            entity.Property(x => x.RowVersion)
+                .IsRowVersion();
 
             entity.HasOne<Employee>()
                 .WithMany()

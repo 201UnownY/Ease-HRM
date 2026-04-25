@@ -1,3 +1,4 @@
+using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.Employees;
 using Ease_HRM.Application.Interfaces;
 using Ease_HRM.Application.Helpers;
@@ -9,11 +10,13 @@ public class EmployeeService : IEmployeeService
 {
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IOrgUnitRepository _orgUnitRepository;
+    private readonly IExceptionTranslator _exceptionTranslator;
 
-    public EmployeeService(IEmployeeRepository employeeRepository, IOrgUnitRepository orgUnitRepository)
+    public EmployeeService(IEmployeeRepository employeeRepository, IOrgUnitRepository orgUnitRepository, IExceptionTranslator exceptionTranslator)
     {
         _employeeRepository = employeeRepository;
         _orgUnitRepository = orgUnitRepository;
+        _exceptionTranslator = exceptionTranslator;
     }
 
     public async Task<EmployeeDto> CreateEmployeeAsync(CreateEmployeeRequest request, CancellationToken cancellationToken = default)
@@ -43,11 +46,6 @@ public class EmployeeService : IEmployeeService
             }
         }
 
-        if (await _employeeRepository.EmailExistsAsync(normalizedEmail, cancellationToken))
-        {
-            throw new InvalidOperationException("Email already exists.");
-        }
-
         if (!await _employeeRepository.UserExistsAsync(userId, cancellationToken))
         {
             throw new InvalidOperationException("User not found.");
@@ -72,8 +70,15 @@ public class EmployeeService : IEmployeeService
             IsActive = true
         };
 
-        await _employeeRepository.AddAsync(employee, cancellationToken);
-        await _employeeRepository.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _employeeRepository.AddAsync(employee, cancellationToken);
+            await _employeeRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException("Duplicate record detected.");
+        }
 
         return new EmployeeDto
         {

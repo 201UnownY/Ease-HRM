@@ -10,7 +10,11 @@ public static class WorkScheduleSeeder
     {
         var hasGlobal = await context.WorkSchedules
             .AsNoTracking()
-            .AnyAsync(x => x.EmployeeId == null && x.OrgUnitId == null && x.IsActive, cancellationToken);
+            .Where(x =>
+                x.EmployeeId == null &&
+                x.OrgUnitId == null)
+            .Where(x => x.EffectiveTo == null)
+            .AnyAsync(cancellationToken);
 
         if (hasGlobal)
         {
@@ -26,7 +30,6 @@ public static class WorkScheduleSeeder
             OrgUnitId = null,
             EffectiveFrom = now.Date,
             EffectiveTo = null,
-            IsActive = true,
             CreatedAt = now,
             UpdatedAt = now,
             MondayWeight = 1m,
@@ -41,6 +44,10 @@ public static class WorkScheduleSeeder
             UpdatedBy = Guid.Empty,
             ChangeReason = "Default global schedule seed"
         };
+
+        schedule.ValidateScope();
+        schedule.ValidateWeights();
+        schedule.ValidateVersioning();
 
         await context.WorkSchedules.AddAsync(schedule, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);

@@ -1,3 +1,4 @@
+using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.LeaveTypes;
 using Ease_HRM.Application.Interfaces;
 using Ease_HRM.Application.Helpers;
@@ -8,10 +9,12 @@ namespace Ease_HRM.Application.Services;
 public class LeaveTypeService : ILeaveTypeService
 {
     private readonly ILeaveTypeRepository _leaveTypeRepository;
+    private readonly IExceptionTranslator _exceptionTranslator;
 
-    public LeaveTypeService(ILeaveTypeRepository leaveTypeRepository)
+    public LeaveTypeService(ILeaveTypeRepository leaveTypeRepository, IExceptionTranslator exceptionTranslator)
     {
         _leaveTypeRepository = leaveTypeRepository;
+        _exceptionTranslator = exceptionTranslator;
     }
 
     public async Task<LeaveTypeDto> CreateLeaveTypeAsync(CreateLeaveTypeRequest request, CancellationToken cancellationToken = default)
@@ -28,11 +31,6 @@ public class LeaveTypeService : ILeaveTypeService
             throw new ArgumentException("Weight must be greater than 0.");
         }
 
-        if (await _leaveTypeRepository.NameExistsAsync(normalizedName, cancellationToken))
-        {
-            throw new InvalidOperationException("Leave type name already exists.");
-        }
-
         var leaveType = new LeaveType
         {
             Id = Guid.NewGuid(),
@@ -42,8 +40,15 @@ public class LeaveTypeService : ILeaveTypeService
             IsPaid = request.IsPaid
         };
 
-        await _leaveTypeRepository.AddAsync(leaveType, cancellationToken);
-        await _leaveTypeRepository.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _leaveTypeRepository.AddAsync(leaveType, cancellationToken);
+            await _leaveTypeRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsUniqueConstraintViolation(ex))
+        {
+            throw new InvalidOperationException("Duplicate record detected.");
+        }
 
         return new LeaveTypeDto
         {
