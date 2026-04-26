@@ -61,4 +61,37 @@ public static class ValidationHelper
         var valid = RequireString(value, "Email");
         return valid.ToLowerInvariant();
     }
+
+    public static byte[] RequireBytes(byte[]? value, string fieldName)
+    {
+        if (value is null || value.Length == 0)
+        {
+            throw new ArgumentException($"{fieldName} is required.");
+        }
+
+        return value;
+    }
+
+    public static byte[] RequireRowVersion(string? base64)
+    {
+        if (string.IsNullOrWhiteSpace(base64))
+        {
+            throw new ArgumentException("RowVersion is required.");
+        }
+
+        try
+        {
+            var rowVersion = Convert.FromBase64String(base64);
+            if (rowVersion.Length == 0)
+            {
+                throw new ArgumentException("RowVersion is required.");
+            }
+
+            return rowVersion;
+        }
+        catch (FormatException)
+        {
+            throw new ArgumentException("RowVersion must be valid Base64.");
+        }
+    }
 }

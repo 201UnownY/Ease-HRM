@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("leave-requests")]
+[Route("api/[controller]")]
 public class LeaveRequestsController : ControllerBase
 {
     private readonly ILeaveRequestService _leaveRequestService;
@@ -52,3 +52,4 @@ public class LeaveRequestsController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Leave requests fetched successfully"));
     }
 }
+

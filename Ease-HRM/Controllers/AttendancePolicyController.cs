@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("attendance-policy")]
+[Route("api/[controller]")]
 public class AttendancePolicyController : ControllerBase
 {
     private readonly IAttendancePolicyService _attendancePolicyService;
@@ -36,3 +36,5 @@ public class AttendancePolicyController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Attendance policy updated successfully"));
     }
 }
+
+

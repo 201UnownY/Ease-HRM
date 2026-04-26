@@ -24,6 +24,13 @@ public class UserRepository : IUserRepository
         await _context.Users.AddAsync(user, cancellationToken);
     }
 
+    public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        return _context.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+    }
+
     public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return _context.Users

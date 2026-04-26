@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("roles")]
+[Route("api/[controller]")]
 public class RolesController : ControllerBase
 {
     private readonly IRoleService _roleService;
@@ -36,3 +36,4 @@ public class RolesController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Roles fetched successfully"));
     }
 }
+

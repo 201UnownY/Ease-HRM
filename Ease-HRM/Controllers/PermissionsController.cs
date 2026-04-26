@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("permissions")]
+[Route("api/[controller]")]
 public class PermissionsController : ControllerBase
 {
     private readonly IPermissionService _permissionService;
@@ -36,3 +36,4 @@ public class PermissionsController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Permissions fetched successfully"));
     }
 }
+

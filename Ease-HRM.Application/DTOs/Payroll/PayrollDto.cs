@@ -13,4 +13,5 @@ public class PayrollDto
     public decimal AttendanceDeduction { get; set; }
     public decimal NetSalary { get; set; }
     public DateTime GeneratedAt { get; set; }
+    public string RowVersion { get; set; } = string.Empty;
 }

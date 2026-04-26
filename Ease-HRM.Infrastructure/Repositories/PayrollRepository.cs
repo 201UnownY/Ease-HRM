@@ -104,6 +104,12 @@ public class PayrollRepository : IPayrollRepository
                 cancellationToken);
     }
 
+    public Task<Payroll?> GetPayrollByIdAsync(Guid payrollId, CancellationToken cancellationToken = default)
+    {
+        return _context.Payrolls
+            .FirstOrDefaultAsync(x => x.Id == payrollId && !x.IsDeleted, cancellationToken);
+    }
+
     public Task<bool> PayrollExistsAsync(Guid employeeId, int year, int month, CancellationToken cancellationToken = default)
     {
         return _context.Payrolls.AnyAsync(x =>
@@ -152,6 +158,11 @@ public class PayrollRepository : IPayrollRepository
     public async Task AddPayrollAsync(Payroll payroll, CancellationToken cancellationToken = default)
     {
         await _context.Payrolls.AddAsync(payroll, cancellationToken);
+    }
+
+    public void SetOriginalRowVersion(Payroll payroll, byte[] rowVersion)
+    {
+        _context.Entry(payroll).Property(nameof(Payroll.RowVersion)).OriginalValue = rowVersion;
     }
 
     public async Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)

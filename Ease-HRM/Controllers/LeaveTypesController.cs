@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("leave-types")]
+[Route("api/[controller]")]
 public class LeaveTypesController : ControllerBase
 {
     private readonly ILeaveTypeService _leaveTypeService;
@@ -36,3 +36,4 @@ public class LeaveTypesController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Leave types fetched successfully"));
     }
 }
+

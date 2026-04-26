@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("attendance")]
+[Route("api/[controller]")]
 public class AttendanceController : ControllerBase
 {
     private readonly IAttendanceService _attendanceService;
@@ -44,3 +44,4 @@ public class AttendanceController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Attendance records fetched successfully"));
     }
 }
+

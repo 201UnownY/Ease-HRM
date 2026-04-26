@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("payroll")]
+[Route("api/[controller]")]
 public class PayrollController : ControllerBase
 {
     private readonly IPayrollService _payrollService;
@@ -44,6 +44,22 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Payroll generated successfully"));
     }
 
+    [HasPermission(Permissions.Payroll.Generate)]
+    [HttpPost("process")]
+    public async Task<IActionResult> ProcessPayroll([FromBody] ProcessPayrollRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _payrollService.ProcessPayrollAsync(request, cancellationToken);
+        return Ok(ApiResponseHelper.Success(result, "Payroll processed successfully"));
+    }
+
+    [HasPermission(Permissions.Payroll.ManageSalaryStructure)]
+    [HttpPut("adjust")]
+    public async Task<IActionResult> AdjustPayroll([FromBody] AdjustPayrollRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _payrollService.AdjustPayrollAsync(request, cancellationToken);
+        return Ok(ApiResponseHelper.Success(result, "Payroll adjusted successfully"));
+    }
+
     [HasPermission(Permissions.Payroll.View)]
     [HttpGet("{employeeId}")]
     public async Task<IActionResult> GetPayrolls(Guid employeeId, CancellationToken cancellationToken)
@@ -52,3 +68,4 @@ public class PayrollController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Payrolls fetched successfully"));
     }
 }
+

@@ -95,6 +95,11 @@ public class LeaveRequestRepository : ILeaveRequestRepository
             .FirstOrDefaultAsync(x => x.EmployeeId == employeeId && x.LeaveTypeId == leaveTypeId && x.Year == year, cancellationToken);
     }
 
+    public void SetOriginalRowVersion(LeaveRequest leaveRequest, byte[] rowVersion)
+    {
+        _context.Entry(leaveRequest).Property(nameof(LeaveRequest.RowVersion)).OriginalValue = rowVersion;
+    }
+
     public Task<bool> HasOverlappingLeaveAsync(Guid employeeId, DateTime start, DateTime end, CancellationToken cancellationToken = default)
     {
         return _context.LeaveRequests.AnyAsync(x =>

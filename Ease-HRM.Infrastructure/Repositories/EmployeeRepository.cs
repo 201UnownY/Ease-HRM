@@ -29,9 +29,19 @@ public class EmployeeRepository : IEmployeeRepository
         return _context.Employees.AnyAsync(x => x.Id == managerId, cancellationToken);
     }
 
+    public Task<Employee?> GetByIdAsync(Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        return _context.Employees.FirstOrDefaultAsync(x => x.Id == employeeId, cancellationToken);
+    }
+
     public async Task AddAsync(Employee employee, CancellationToken cancellationToken = default)
     {
         await _context.Employees.AddAsync(employee, cancellationToken);
+    }
+
+    public void SetOriginalRowVersion(Employee employee, byte[] rowVersion)
+    {
+        _context.Entry(employee).Property(nameof(Employee.RowVersion)).OriginalValue = rowVersion;
     }
 
     public Task<List<Employee>> GetAllAsync(CancellationToken cancellationToken = default)

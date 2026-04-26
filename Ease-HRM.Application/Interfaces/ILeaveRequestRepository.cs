@@ -12,6 +12,7 @@ public interface ILeaveRequestRepository
     Task<List<Employee>> GetHierarchyEmployeesAsync(Guid employeeId, CancellationToken cancellationToken = default);
     Task<bool> LeaveTypeExistsAsync(Guid leaveTypeId, CancellationToken cancellationToken = default);
     Task<LeaveBalance?> GetLeaveBalanceAsync(Guid employeeId, Guid leaveTypeId, int year, CancellationToken cancellationToken = default);
+    void SetOriginalRowVersion(LeaveRequest leaveRequest, byte[] rowVersion);
     Task<bool> HasOverlappingLeaveAsync(Guid employeeId, DateTime start, DateTime end, CancellationToken cancellationToken = default);
     Task ExecuteInTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);

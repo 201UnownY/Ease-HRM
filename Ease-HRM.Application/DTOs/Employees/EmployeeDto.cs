@@ -12,4 +12,5 @@ public class EmployeeDto
     public Guid? ManagerId { get; set; }
     public DateTime JoinDate { get; set; }
     public bool IsActive { get; set; }
+    public string RowVersion { get; set; } = string.Empty;
 }

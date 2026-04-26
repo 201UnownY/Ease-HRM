@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("org-units")]
+[Route("api/[controller]")]
 public class OrgUnitsController : ControllerBase
 {
     private readonly IOrgUnitService _orgUnitService;
@@ -36,3 +36,4 @@ public class OrgUnitsController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Org units fetched successfully"));
     }
 }
+

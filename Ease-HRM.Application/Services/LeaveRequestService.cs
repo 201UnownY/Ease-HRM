@@ -1,3 +1,4 @@
+using Ease_HRM.Application.Common.Exceptions;
 using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.LeaveRequests;
 using Ease_HRM.Application.Helpers;
@@ -10,6 +11,8 @@ namespace Ease_HRM.Application.Services;
 
 public class LeaveRequestService : ILeaveRequestService
 {
+    private const string ConcurrencyConflictMessage = "The record was modified by another user. Please refresh and try again.";
+
     private readonly ILeaveRequestRepository _leaveRequestRepository;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
@@ -56,7 +59,7 @@ public class LeaveRequestService : ILeaveRequestService
 
         if (await _leaveRequestRepository.HasOverlappingLeaveAsync(employeeId, request.StartDate, request.EndDate, cancellationToken))
         {
-            throw new InvalidOperationException("Overlapping leave request exists.");
+            throw new BusinessRuleException("Overlapping leave request exists.");
         }
 
         var leaveBalance = await _leaveRequestRepository.GetLeaveBalanceAsync(employeeId, leaveTypeId, request.StartDate.Year, cancellationToken);
@@ -68,7 +71,7 @@ public class LeaveRequestService : ILeaveRequestService
         var availableLeave = leaveBalance.Allocated + leaveBalance.CarryForward - leaveBalance.Used;
         if (duration > availableLeave)
         {
-            throw new InvalidOperationException("Insufficient leave balance.");
+            throw new BusinessRuleException("Insufficient leave balance.");
         }
 
         var leaveRequest = new LeaveRequest
@@ -111,7 +114,8 @@ public class LeaveRequestService : ILeaveRequestService
             AppliedOn = leaveRequest.AppliedOn,
             CurrentApproverId = leaveRequest.CurrentApproverId,
             ApprovedBy = leaveRequest.ApprovedBy,
-            ApprovedOn = leaveRequest.ApprovedOn
+            ApprovedOn = leaveRequest.ApprovedOn,
+            RowVersion = leaveRequest.RowVersion
         };
     }
 
@@ -152,6 +156,7 @@ public class LeaveRequestService : ILeaveRequestService
     public async Task<LeaveRequestDto> ApproveLeaveAsync(ApproveLeaveRequest request, CancellationToken cancellationToken = default)
     {
         var leaveRequestId = ValidationHelper.RequireGuid(request.LeaveRequestId, "LeaveRequestId");
+        var rowVersion = ValidationHelper.RequireBytes(request.RowVersion, nameof(request.RowVersion));
 
         var approverId = _currentUserService.UserId
             ?? throw new UnauthorizedAccessException("User not authenticated.");
@@ -161,6 +166,8 @@ public class LeaveRequestService : ILeaveRequestService
         {
             throw new InvalidOperationException("Leave request not found.");
         }
+
+        _leaveRequestRepository.SetOriginalRowVersion(leaveRequest, rowVersion);
 
         if (leaveRequest.Status != LeaveStatus.Pending)
         {
@@ -183,17 +190,17 @@ public class LeaveRequestService : ILeaveRequestService
         {
             if (approverEmp == null)
             {
-                throw new InvalidOperationException("Approver not found.");
+                throw new AuthorizationException("Approver not found.");
             }
 
             if (!await IsInHierarchy(leaveRequest.EmployeeId, approverEmp.Id, cancellationToken))
             {
-                throw new InvalidOperationException("Approver not in reporting hierarchy.");
+                throw new AuthorizationException("Approver not in reporting hierarchy.");
             }
 
             if (leaveRequest.CurrentApproverId != approverEmp.Id)
             {
-                throw new InvalidOperationException("Current user is not the designated approver for this leave request.");
+                throw new AuthorizationException("Current user is not the designated approver for this leave request.");
             }
 
             if (approverEmp.ManagerId.HasValue)
@@ -239,7 +246,7 @@ public class LeaveRequestService : ILeaveRequestService
 
                         if (balance.Used + duration > balance.Allocated + balance.CarryForward)
                         {
-                            throw new InvalidOperationException("Insufficient leave balance.");
+                            throw new BusinessRuleException("Insufficient leave balance.");
                         }
 
                         balance.Used += duration;
@@ -256,7 +263,7 @@ public class LeaveRequestService : ILeaveRequestService
         }
         catch (Exception ex) when (_exceptionTranslator.IsConcurrencyConflict(ex))
         {
-            throw new InvalidOperationException("Leave balance was modified by another operation. Please retry.");
+            throw new ConcurrencyException(ConcurrencyConflictMessage, nameof(LeaveRequest));
         }
 
         return new LeaveRequestDto
@@ -271,13 +278,15 @@ public class LeaveRequestService : ILeaveRequestService
             AppliedOn = leaveRequest.AppliedOn,
             CurrentApproverId = leaveRequest.CurrentApproverId,
             ApprovedBy = leaveRequest.ApprovedBy,
-            ApprovedOn = leaveRequest.ApprovedOn
+            ApprovedOn = leaveRequest.ApprovedOn,
+            RowVersion = leaveRequest.RowVersion
         };
     }
 
     public async Task<LeaveRequestDto> RejectLeaveAsync(RejectLeaveRequest request, CancellationToken cancellationToken = default)
     {
         var leaveRequestId = ValidationHelper.RequireGuid(request.LeaveRequestId, "LeaveRequestId");
+        var rowVersion = ValidationHelper.RequireBytes(request.RowVersion, nameof(request.RowVersion));
 
         var approverId = _currentUserService.UserId
             ?? throw new UnauthorizedAccessException("User not authenticated.");
@@ -287,6 +296,8 @@ public class LeaveRequestService : ILeaveRequestService
         {
             throw new InvalidOperationException("Leave request not found.");
         }
+
+        _leaveRequestRepository.SetOriginalRowVersion(leaveRequest, rowVersion);
 
         if (leaveRequest.Status != LeaveStatus.Pending)
         {
@@ -309,17 +320,17 @@ public class LeaveRequestService : ILeaveRequestService
         {
             if (approverEmp == null)
             {
-                throw new InvalidOperationException("Approver not found.");
+                throw new AuthorizationException("Approver not found.");
             }
 
             if (!await IsInHierarchy(leaveRequest.EmployeeId, approverEmp.Id, cancellationToken))
             {
-                throw new InvalidOperationException("Approver not in reporting hierarchy.");
+                throw new AuthorizationException("Approver not in reporting hierarchy.");
             }
 
             if (leaveRequest.CurrentApproverId != approverEmp.Id)
             {
-                throw new InvalidOperationException("Current user is not the designated approver for this leave request.");
+                throw new AuthorizationException("Current user is not the designated approver for this leave request.");
             }
         }
 
@@ -327,11 +338,18 @@ public class LeaveRequestService : ILeaveRequestService
         leaveRequest.ApprovedBy = approverEmp?.Id;
         leaveRequest.ApprovedOn = DateTime.UtcNow;
 
-        await _leaveRequestRepository.ExecuteInTransactionAsync(async ct =>
+        try
         {
-            await _leaveRequestRepository.SaveChangesAsync(ct);
-            await _auditLogService.LogAsync(AuditActions.Reject, AuditEntities.LeaveRequest, leaveRequest.Id, "Leave request rejected", ct);
-        }, cancellationToken);
+            await _leaveRequestRepository.ExecuteInTransactionAsync(async ct =>
+            {
+                await _leaveRequestRepository.SaveChangesAsync(ct);
+                await _auditLogService.LogAsync(AuditActions.Reject, AuditEntities.LeaveRequest, leaveRequest.Id, "Leave request rejected", ct);
+            }, cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsConcurrencyConflict(ex))
+        {
+            throw new ConcurrencyException(ConcurrencyConflictMessage, nameof(LeaveRequest));
+        }
 
         return new LeaveRequestDto
         {
@@ -345,7 +363,8 @@ public class LeaveRequestService : ILeaveRequestService
             AppliedOn = leaveRequest.AppliedOn,
             CurrentApproverId = leaveRequest.CurrentApproverId,
             ApprovedBy = leaveRequest.ApprovedBy,
-            ApprovedOn = leaveRequest.ApprovedOn
+            ApprovedOn = leaveRequest.ApprovedOn,
+            RowVersion = leaveRequest.RowVersion
         };
     }
 
@@ -366,7 +385,8 @@ public class LeaveRequestService : ILeaveRequestService
                 AppliedOn = x.AppliedOn,
                 CurrentApproverId = x.CurrentApproverId,
                 ApprovedBy = x.ApprovedBy,
-                ApprovedOn = x.ApprovedOn
+                ApprovedOn = x.ApprovedOn,
+                RowVersion = x.RowVersion
             })
             .ToList()
             .AsReadOnly();

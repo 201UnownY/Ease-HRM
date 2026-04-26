@@ -1,3 +1,4 @@
+using Ease_HRM.Application.Common.Exceptions;
 using Ease_HRM.Application.Common.Interfaces;
 using Ease_HRM.Application.DTOs.Payroll;
 using Ease_HRM.Application.Constants;
@@ -10,6 +11,8 @@ namespace Ease_HRM.Application.Services;
 
 public class PayrollService : IPayrollService
 {
+    private const string ConcurrencyConflictMessage = "The record was modified by another user. Please refresh and try again.";
+
     private readonly IPayrollRepository _payrollRepository;
     private readonly IWorkScheduleRepository _workScheduleRepository;
     private readonly ICurrentUserService _currentUserService;
@@ -287,25 +290,83 @@ public class PayrollService : IPayrollService
             var existing = await _payrollRepository.GetPayrollAsync(employeeId, year, month, cancellationToken);
             if (existing != null)
             {
-                return new PayrollDto
-                {
-                    Id = existing.Id,
-                    EmployeeId = existing.EmployeeId,
-                    Year = existing.Year,
-                    Month = existing.Month,
-                    BaseSalary = existing.BaseSalary,
-                    HRA = existing.HRA,
-                    Allowances = existing.Allowances,
-                    LeaveDeduction = Math.Round(existing.LeaveDeduction, 2, MidpointRounding.AwayFromZero),
-                    AttendanceDeduction = Math.Round(existing.AttendanceDeduction, 2, MidpointRounding.AwayFromZero),
-                    NetSalary = Math.Round(existing.NetSalary, 2, MidpointRounding.AwayFromZero),
-                    GeneratedAt = existing.GeneratedAt
-                };
+                return ToPayrollDto(existing);
             }
 
             throw;
         }
 
+        return ToPayrollDto(payroll);
+    }
+
+    public async Task<PayrollDto> ProcessPayrollAsync(ProcessPayrollRequest request, CancellationToken cancellationToken = default)
+    {
+        var payrollId = ValidationHelper.RequireGuid(request.PayrollId, nameof(request.PayrollId));
+        var rowVersion = ValidationHelper.RequireRowVersion(request.RowVersion);
+
+        var payroll = await _payrollRepository.GetPayrollByIdAsync(payrollId, cancellationToken)
+            ?? throw new InvalidOperationException("Payroll record not found.");
+
+        _payrollRepository.SetOriginalRowVersion(payroll, rowVersion);
+        payroll.GeneratedAt = DateTime.UtcNow;
+
+        try
+        {
+            await _payrollRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsConcurrencyConflict(ex))
+        {
+            throw new ConcurrencyException(ConcurrencyConflictMessage, nameof(Payroll));
+        }
+
+        return ToPayrollDto(payroll);
+    }
+
+    public async Task<PayrollDto> AdjustPayrollAsync(AdjustPayrollRequest request, CancellationToken cancellationToken = default)
+    {
+        var payrollId = ValidationHelper.RequireGuid(request.PayrollId, nameof(request.PayrollId));
+        var rowVersion = ValidationHelper.RequireRowVersion(request.RowVersion);
+        ValidationHelper.EnsureNonNegative(request.LeaveDeduction, nameof(request.LeaveDeduction));
+        ValidationHelper.EnsureNonNegative(request.AttendanceDeduction, nameof(request.AttendanceDeduction));
+
+        var payroll = await _payrollRepository.GetPayrollByIdAsync(payrollId, cancellationToken)
+            ?? throw new InvalidOperationException("Payroll record not found.");
+
+        _payrollRepository.SetOriginalRowVersion(payroll, rowVersion);
+
+        payroll.LeaveDeduction = request.LeaveDeduction;
+        payroll.AttendanceDeduction = request.AttendanceDeduction;
+
+        var gross = payroll.BaseSalary + payroll.HRA + payroll.Allowances;
+        var net = Math.Max(0, gross - (payroll.LeaveDeduction + payroll.AttendanceDeduction));
+        payroll.NetSalary = Math.Round(net, 2, MidpointRounding.AwayFromZero);
+
+        try
+        {
+            await _payrollRepository.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (_exceptionTranslator.IsConcurrencyConflict(ex))
+        {
+            throw new ConcurrencyException(ConcurrencyConflictMessage, nameof(Payroll));
+        }
+
+        return ToPayrollDto(payroll);
+    }
+
+    public async Task<IReadOnlyList<PayrollDto>> GetPayrollsAsync(Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        ValidationHelper.RequireGuid(employeeId, "EmployeeId");
+
+        var payrolls = await _payrollRepository.GetPayrollsAsync(employeeId, cancellationToken);
+
+        return payrolls
+            .Select(ToPayrollDto)
+            .ToList()
+            .AsReadOnly();
+    }
+
+    private static PayrollDto ToPayrollDto(Payroll payroll)
+    {
         return new PayrollDto
         {
             Id = payroll.Id,
@@ -318,33 +379,11 @@ public class PayrollService : IPayrollService
             LeaveDeduction = Math.Round(payroll.LeaveDeduction, 2, MidpointRounding.AwayFromZero),
             AttendanceDeduction = Math.Round(payroll.AttendanceDeduction, 2, MidpointRounding.AwayFromZero),
             NetSalary = Math.Round(payroll.NetSalary, 2, MidpointRounding.AwayFromZero),
-            GeneratedAt = payroll.GeneratedAt
+            GeneratedAt = payroll.GeneratedAt,
+            RowVersion = payroll.RowVersion is { Length: > 0 }
+                ? Convert.ToBase64String(payroll.RowVersion)
+                : string.Empty
         };
-    }
-
-    public async Task<IReadOnlyList<PayrollDto>> GetPayrollsAsync(Guid employeeId, CancellationToken cancellationToken = default)
-    {
-        ValidationHelper.RequireGuid(employeeId, "EmployeeId");
-
-        var payrolls = await _payrollRepository.GetPayrollsAsync(employeeId, cancellationToken);
-
-        return payrolls
-            .Select(x => new PayrollDto
-            {
-                Id = x.Id,
-                EmployeeId = x.EmployeeId,
-                Year = x.Year,
-                Month = x.Month,
-                BaseSalary = x.BaseSalary,
-                HRA = x.HRA,
-                Allowances = x.Allowances,
-                LeaveDeduction = Math.Round(x.LeaveDeduction, 2, MidpointRounding.AwayFromZero),
-                AttendanceDeduction = Math.Round(x.AttendanceDeduction, 2, MidpointRounding.AwayFromZero),
-                NetSalary = Math.Round(x.NetSalary, 2, MidpointRounding.AwayFromZero),
-                GeneratedAt = x.GeneratedAt
-            })
-            .ToList()
-            .AsReadOnly();
     }
 
     private static (decimal LeaveDeduction, decimal AttendanceDeduction) CalculateDeductions(

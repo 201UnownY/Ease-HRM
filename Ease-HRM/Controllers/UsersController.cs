@@ -10,7 +10,7 @@ namespace Ease_HRM.Api.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("users")]
+[Route("api/[controller]")]
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
@@ -54,3 +54,4 @@ public class UsersController : ControllerBase
         return Ok(ApiResponseHelper.Success(result, "Users fetched successfully"));
     }
 }
+

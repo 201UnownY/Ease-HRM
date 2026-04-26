@@ -13,4 +13,5 @@ public class LeaveRequestDto
     public Guid? CurrentApproverId { get; set; }
     public Guid? ApprovedBy { get; set; }
     public DateTime? ApprovedOn { get; set; }
+    public byte[] RowVersion { get; set; } = default!;
 }

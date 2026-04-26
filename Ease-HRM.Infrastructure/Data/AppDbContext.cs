@@ -212,11 +212,14 @@ public class AppDbContext : DbContext
 
             entity.Property(x => x.JoinDate).IsRequired();
             entity.Property(x => x.IsActive).IsRequired();
+            entity.Property(x => x.RowVersion)
+                .IsRowVersion();
 
             entity.HasIndex(x => x.UserId).IsUnique();
             entity.HasIndex(x => x.OrgUnitId);
             entity.HasIndex(x => x.ManagerId);
             entity.HasIndex(x => new { x.FirstName, x.LastName });
+            entity.HasIndex(x => x.IsActive);
 
             entity.HasOne<User>()
                 .WithMany()
@@ -236,7 +239,16 @@ public class AppDbContext : DbContext
 
         builder.Entity<WorkSchedule>(entity =>
         {
-            entity.ToTable("WorkSchedules");
+            entity.ToTable("WorkSchedules", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_WorkSchedules_EffectiveRange",
+                    "[EffectiveTo] IS NULL OR [EffectiveTo] >= [EffectiveFrom]");
+
+                t.HasCheckConstraint(
+                    "CK_WorkSchedules_Scope",
+                    "NOT ([EmployeeId] IS NOT NULL AND [OrgUnitId] IS NOT NULL)");
+            });
 
             entity.HasKey(x => x.Id);
 
@@ -279,20 +291,6 @@ public class AppDbContext : DbContext
             // Optional deterministic tie-break safety
             entity.HasIndex(x => new { x.EmployeeId, x.OrgUnitId, x.EffectiveFrom, x.CreatedAt, x.Id })
                 .HasDatabaseName("IX_WorkSchedules_Deterministic");
-
-            // =========================
-            // CONSTRAINTS (data integrity)
-            // =========================
-
-            // Ensure valid date range
-            entity.HasCheckConstraint(
-                "CK_WorkSchedules_EffectiveRange",
-                "[EffectiveTo] IS NULL OR [EffectiveTo] >= [EffectiveFrom]");
-
-            // Ensure valid scope (cannot have both Employee + OrgUnit)
-            entity.HasCheckConstraint(
-                "CK_WorkSchedules_Scope",
-                "NOT ([EmployeeId] IS NOT NULL AND [OrgUnitId] IS NOT NULL)");
 
             // =========================
             // RELATIONSHIPS
@@ -353,8 +351,8 @@ public class AppDbContext : DbContext
             entity.HasIndex(x => x.Name)
                 .IsUnique();
 
-            entity.Property(x => x.DefaultDays).IsRequired();
-            entity.Property(x => x.Weight).IsRequired();
+            entity.Property(x => x.DefaultDays).HasPrecision(5, 2).IsRequired();
+            entity.Property(x => x.Weight).HasPrecision(10, 4).IsRequired();
             entity.Property(x => x.IsPaid).IsRequired();
         });
 
@@ -368,9 +366,9 @@ public class AppDbContext : DbContext
                 .IsUnique();
 
             entity.Property(x => x.Year).IsRequired();
-            entity.Property(x => x.Allocated).IsRequired();
-            entity.Property(x => x.Used).IsRequired();
-            entity.Property(x => x.CarryForward).IsRequired();
+            entity.Property(x => x.Allocated).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.Used).HasPrecision(10, 2).IsRequired();
+            entity.Property(x => x.CarryForward).HasPrecision(10, 2).IsRequired();
             entity.Property(x => x.RowVersion)
                 .IsRowVersion();
 
@@ -387,7 +385,12 @@ public class AppDbContext : DbContext
 
         builder.Entity<LeaveRequest>(entity =>
         {
-            entity.ToTable("LeaveRequests");
+            entity.ToTable("LeaveRequests", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_LeaveRequests_DateRange",
+                    "[EndDate] >= [StartDate]");
+            });
 
             entity.HasKey(x => x.Id);
 
@@ -404,12 +407,15 @@ public class AppDbContext : DbContext
             entity.Property(x => x.EndDate).IsRequired();
             entity.Property(x => x.AppliedOn).IsRequired();
             entity.Property(x => x.IsDeleted).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.RowVersion)
+                .IsRowVersion();
 
             entity.HasIndex(x => x.EmployeeId);
             entity.HasIndex(x => x.LeaveTypeId);
             entity.HasIndex(x => x.ApprovedBy);
             entity.HasIndex(x => x.CurrentApproverId);
             entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => new { x.EmployeeId, x.Status });
             entity.HasIndex(x => x.AppliedOn);
             entity.HasIndex(x => new { x.EmployeeId, x.StartDate, x.EndDate });
 
@@ -429,16 +435,26 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.ApprovedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<Employee>()
+                .WithMany()
+                .HasForeignKey(x => x.CurrentApproverId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<AttendancePolicy>(entity =>
         {
-            entity.ToTable("AttendancePolicies");
+            entity.ToTable("AttendancePolicies", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_AttendancePolicies_EffectiveRange",
+                    "[EffectiveTo] IS NULL OR [EffectiveTo] >= [EffectiveFrom]");
+            });
 
             entity.HasKey(x => x.Id);
 
-            entity.Property(x => x.FullDayHours).IsRequired();
-            entity.Property(x => x.HalfDayHours).IsRequired();
+            entity.Property(x => x.FullDayHours).HasPrecision(5, 2).IsRequired();
+            entity.Property(x => x.HalfDayHours).HasPrecision(5, 2).IsRequired();
             entity.Property(x => x.EffectiveFrom).IsRequired();
             entity.Property(x => x.EffectiveTo).IsRequired(false);
             entity.Property(x => x.CreatedAt).IsRequired();
@@ -446,10 +462,6 @@ public class AppDbContext : DbContext
             entity.Property(x => x.CreatedBy).IsRequired();
             entity.Property(x => x.UpdatedBy).IsRequired();
             entity.Property(x => x.ChangeReason).HasMaxLength(500);
-
-            entity.HasCheckConstraint(
-                "CK_AttendancePolicies_EffectiveRange",
-                "[EffectiveTo] IS NULL OR [EffectiveTo] >= [EffectiveFrom]");
 
             entity.HasIndex(x => x.EffectiveFrom);
             entity.HasIndex(x => new { x.EffectiveFrom, x.EffectiveTo, x.CreatedAt })
@@ -468,6 +480,7 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(x => new { x.EmployeeId, x.Date });
             entity.HasIndex(x => new { x.EmployeeId, x.CheckOutTime });
+            // Keep this filtered unique index aligned with the application rule: one open session per employee.
             entity.HasIndex(x => x.EmployeeId)
                 .HasFilter("[CheckOutTime] IS NULL")
                 .IsUnique();
@@ -480,14 +493,19 @@ public class AppDbContext : DbContext
 
         builder.Entity<SalaryStructure>(entity =>
         {
-            entity.ToTable("SalaryStructures");
+            entity.ToTable("SalaryStructures", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_SalaryStructures_EffectiveRange",
+                    "[EffectiveTo] IS NULL OR [EffectiveTo] >= [EffectiveFrom]");
+            });
 
             entity.HasKey(x => x.Id);
 
-            entity.Property(x => x.BaseSalary).IsRequired();
-            entity.Property(x => x.HRA).IsRequired();
-            entity.Property(x => x.Allowances).IsRequired();
-            entity.Property(x => x.Deductions).IsRequired();
+            entity.Property(x => x.BaseSalary).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.HRA).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.Allowances).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.Deductions).HasPrecision(18, 2).IsRequired();
             entity.Property(x => x.EffectiveFrom).IsRequired();
             entity.Property(x => x.EffectiveTo).IsRequired(false);
             entity.Property(x => x.CreatedAt).IsRequired();
@@ -496,10 +514,6 @@ public class AppDbContext : DbContext
             entity.Property(x => x.UpdatedBy).IsRequired();
             entity.Property(x => x.ChangeReason).HasMaxLength(500);
             entity.Property(x => x.IsDeleted).IsRequired().HasDefaultValue(false);
-
-            entity.HasCheckConstraint(
-                "CK_SalaryStructures_EffectiveRange",
-                "[EffectiveTo] IS NULL OR [EffectiveTo] >= [EffectiveFrom]");
 
             entity.HasIndex(x => new { x.EmployeeId, x.EffectiveFrom });
             entity.HasIndex(x => new { x.EmployeeId, x.EffectiveFrom, x.EffectiveTo, x.CreatedAt })
@@ -515,27 +529,36 @@ public class AppDbContext : DbContext
 
         builder.Entity<Payroll>(entity =>
         {
-            entity.ToTable("Payrolls");
+            entity.ToTable("Payrolls", t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_Payroll_Month",
+                    "[Month] >= 1 AND [Month] <= 12");
+            });
 
             entity.HasKey(x => x.Id);
 
             entity.Property(x => x.Year).IsRequired();
             entity.Property(x => x.Month).IsRequired();
 
-            entity.Property(x => x.BaseSalary).IsRequired();
-            entity.Property(x => x.HRA).IsRequired();
-            entity.Property(x => x.Allowances).IsRequired();
+            entity.Property(x => x.BaseSalary).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.HRA).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.Allowances).HasPrecision(18, 2).IsRequired();
 
-            entity.Property(x => x.LeaveDeduction).IsRequired();
-            entity.Property(x => x.AttendanceDeduction).IsRequired();
-            entity.Property(x => x.NetSalary).IsRequired();
+            entity.Property(x => x.LeaveDeduction).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.AttendanceDeduction).HasPrecision(18, 2).IsRequired();
+            entity.Property(x => x.NetSalary).HasPrecision(18, 2).IsRequired();
 
             entity.Property(x => x.GeneratedAt).IsRequired();
             entity.Property(x => x.IsDeleted).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.RowVersion)
+                .IsRowVersion();
 
             entity.HasIndex(x => new { x.EmployeeId, x.Year, x.Month })
                 .IsUnique()
                 .HasFilter("[IsDeleted] = 0");
+
+            entity.HasIndex(x => x.GeneratedAt);
 
             entity.HasQueryFilter(x => !x.IsDeleted);
 

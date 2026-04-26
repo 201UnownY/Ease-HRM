@@ -12,4 +12,5 @@ public class Employee
     public Guid? ManagerId { get; set; }
     public DateTime JoinDate { get; set; }
     public bool IsActive { get; set; }
+    public byte[] RowVersion { get; set; } = default!;
 }
