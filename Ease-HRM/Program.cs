@@ -10,6 +10,13 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
  
 var builder = WebApplication.CreateBuilder(args);
+const string DevCorsPolicy = "DevCorsPolicy";
+var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Select(origin => origin.Trim())
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray()
+    ?? [];
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -94,6 +101,22 @@ builder.Services.AddAuthorization(options =>
     options.FallbackPolicy = options.DefaultPolicy;
 });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(DevCorsPolicy, policy =>
+    {
+        if (allowedCorsOrigins.Length == 0)
+        {
+            throw new InvalidOperationException("Cors:AllowedOrigins is not configured.");
+        }
+
+        policy
+            .WithOrigins(allowedCorsOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -115,7 +138,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+app.UseCors(DevCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 

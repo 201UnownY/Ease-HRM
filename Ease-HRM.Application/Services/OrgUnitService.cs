@@ -58,15 +58,41 @@ public class OrgUnitService : IOrgUnitService
         var orgUnits = await _orgUnitRepository.GetAllAsync(cancellationToken);
 
         return orgUnits
-            .Select(x => new OrgUnitDto
-            {
-                Id = x.Id,
-                Name = x.Name,
-                ParentOrgUnitId = x.ParentOrgUnitId,
-                Level = x.Level,
-                IsActive = x.IsActive
-            })
+            .Select(ToDto)
             .ToList()
             .AsReadOnly();
+    }
+
+    public async Task<OrgUnitDto> UpdateOrgUnitAsync(UpdateOrgUnitRequest request, CancellationToken cancellationToken = default)
+    {
+        var orgUnitId = ValidationHelper.RequireGuid(request.Id, nameof(request.Id));
+        var normalizedName = StringHelper.Normalize(request.Name, "OrgUnit name");
+
+        var orgUnit = await _orgUnitRepository.GetByIdAsync(orgUnitId, cancellationToken)
+            ?? throw new InvalidOperationException("OrgUnit not found.");
+
+        if (await _orgUnitRepository.NameExistsAsync(normalizedName, orgUnitId, cancellationToken))
+        {
+            throw new InvalidOperationException("OrgUnit name already exists.");
+        }
+
+        orgUnit.Name = normalizedName;
+        orgUnit.IsActive = request.IsActive;
+
+        await _orgUnitRepository.SaveChangesAsync(cancellationToken);
+
+        return ToDto(orgUnit);
+    }
+
+    private static OrgUnitDto ToDto(OrgUnit orgUnit)
+    {
+        return new OrgUnitDto
+        {
+            Id = orgUnit.Id,
+            Name = orgUnit.Name,
+            ParentOrgUnitId = orgUnit.ParentOrgUnitId,
+            Level = orgUnit.Level,
+            IsActive = orgUnit.IsActive
+        };
     }
 }

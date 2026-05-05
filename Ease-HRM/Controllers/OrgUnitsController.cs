@@ -35,5 +35,13 @@ public class OrgUnitsController : ControllerBase
         var result = await _orgUnitService.GetAllOrgUnitsAsync(cancellationToken);
         return Ok(ApiResponseHelper.Success(result, "Org units fetched successfully"));
     }
+
+    [HasPermission(Permissions.OrgUnit.Update)]
+    [HttpPut]
+    public async Task<IActionResult> Update([FromBody] UpdateOrgUnitRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _orgUnitService.UpdateOrgUnitAsync(request, cancellationToken);
+        return Ok(ApiResponseHelper.Success(result, "Org unit updated successfully"));
+    }
 }
 

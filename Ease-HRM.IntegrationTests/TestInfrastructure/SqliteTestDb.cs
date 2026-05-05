@@ -36,7 +36,26 @@ internal static class SqliteTestDb
         {
             base.OnModelCreating(builder);
 
-            builder.Entity<LeaveBalance>()
+            // Set default RowVersion for all concurrency-tracked entities in SQLite tests
+            builder.Entity<Ease_HRM.Domain.Entities.Employee>()
+                .Property(x => x.RowVersion)
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAddOrUpdate()
+                .HasDefaultValueSql("randomblob(8)");
+
+            builder.Entity<Ease_HRM.Domain.Entities.LeaveBalance>()
+                .Property(x => x.RowVersion)
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAddOrUpdate()
+                .HasDefaultValueSql("randomblob(8)");
+
+            builder.Entity<Ease_HRM.Domain.Entities.LeaveRequest>()
+                .Property(x => x.RowVersion)
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAddOrUpdate()
+                .HasDefaultValueSql("randomblob(8)");
+
+            builder.Entity<Ease_HRM.Domain.Entities.Payroll>()
                 .Property(x => x.RowVersion)
                 .IsConcurrencyToken()
                 .ValueGeneratedOnAddOrUpdate()

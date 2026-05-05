@@ -7,6 +7,7 @@ using Ease_HRM.Infrastructure.Data;
 using Ease_HRM.Infrastructure.Repositories;
 using Ease_HRM.Infrastructure.Services;
 using Ease_HRM.IntegrationTests.TestInfrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace Ease_HRM.IntegrationTests.Leave;
 
@@ -43,12 +44,15 @@ public class LeaveAuthorizationTests
 
         await setupDb.SaveChangesAsync();
 
+        await using var fetchDb = SqliteTestDb.CreateContext(connection);
+        var fetchedLeave = await fetchDb.LeaveRequests.FirstAsync(x => x.Id == leave.Id);
+
         await using var actionDb = SqliteTestDb.CreateContext(connection);
 
         var service = TestServiceFactory.CreateLeaveService(actionDb, new TestCurrentUserService(notManager.UserId, notManager.Email));
 
         var ex = await Assert.ThrowsAsync<AuthorizationException>(() =>
-            service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id }));
+            service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id, RowVersion = fetchedLeave.RowVersion }));
 
         Assert.IsType<AuthorizationException>(ex);
     }

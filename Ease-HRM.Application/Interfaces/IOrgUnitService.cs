@@ -6,4 +6,5 @@ public interface IOrgUnitService
 {
     Task<OrgUnitDto> CreateOrgUnitAsync(CreateOrgUnitRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OrgUnitDto>> GetAllOrgUnitsAsync(CancellationToken cancellationToken = default);
+    Task<OrgUnitDto> UpdateOrgUnitAsync(UpdateOrgUnitRequest request, CancellationToken cancellationToken = default);
 }

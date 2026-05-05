@@ -31,6 +31,10 @@ public class LeaveConcurrencyTests
 
         await setupDb.SaveChangesAsync();
 
+        await using var fetchDb = SqliteTestDb.CreateContext(connection);
+        var fetchedLeave1 = await fetchDb.LeaveRequests.FirstAsync(x => x.Id == leave1.Id);
+        var fetchedLeave2 = await fetchDb.LeaveRequests.FirstAsync(x => x.Id == leave2.Id);
+
         await using var db1 = SqliteTestDb.CreateContext(connection);
         await using var db2 = SqliteTestDb.CreateContext(connection);
 
@@ -40,8 +44,8 @@ public class LeaveConcurrencyTests
         var service1 = TestServiceFactory.CreateLeaveService(db1, currentUser1);
         var service2 = TestServiceFactory.CreateLeaveService(db2, currentUser2);
 
-        var task1 = AttemptApproveAsync(service1, leave1.Id);
-        var task2 = AttemptApproveAsync(service2, leave2.Id);
+        var task1 = AttemptApproveAsync(service1, leave1.Id, fetchedLeave1.RowVersion);
+        var task2 = AttemptApproveAsync(service2, leave2.Id, fetchedLeave2.RowVersion);
 
         await Task.WhenAll(task1, task2);
 
@@ -64,11 +68,11 @@ public class LeaveConcurrencyTests
         Assert.True(balance.Used == 5m || balance.Used == 6m, $"Unexpected used value: {balance.Used}");
     }
 
-    private static async Task<(bool IsSuccess, Exception? Error)> AttemptApproveAsync(ILeaveRequestService service, Guid leaveRequestId)
+    private static async Task<(bool IsSuccess, Exception? Error)> AttemptApproveAsync(ILeaveRequestService service, Guid leaveRequestId, byte[] rowVersion)
     {
         try
         {
-            await service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leaveRequestId });
+            await service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leaveRequestId, RowVersion = rowVersion });
             return (true, null);
         }
         catch (Exception ex)

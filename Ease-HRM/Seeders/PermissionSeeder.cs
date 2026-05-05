@@ -23,6 +23,7 @@ public static class PermissionSeeder
             Permissions.RolePermission.View,
             Permissions.OrgUnit.Create,
             Permissions.OrgUnit.View,
+            Permissions.OrgUnit.Update,
             Permissions.Employee.Create,
             Permissions.Employee.View,
             Permissions.Employee.Update,

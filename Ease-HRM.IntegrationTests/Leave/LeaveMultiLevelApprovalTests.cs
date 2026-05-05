@@ -37,26 +37,30 @@ public class LeaveMultiLevelApprovalTests
 
         await setupDb.SaveChangesAsync();
 
+        await using var fetchDb = SqliteTestDb.CreateContext(connection);
+        var fetchedLeave = await fetchDb.LeaveRequests.FirstAsync(x => x.Id == leave.Id);
+        var initialRowVersion = fetchedLeave.RowVersion;
+
         await using var manager1Db = SqliteTestDb.CreateContext(connection);
         var manager1Service = TestServiceFactory.CreateLeaveService(
             manager1Db,
             new TestCurrentUserService(manager1User.Id, manager1User.Email));
 
-        await manager1Service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id });
+        await manager1Service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id, RowVersion = initialRowVersion });
 
         await using (var assertAfterFirstDb = SqliteTestDb.CreateContext(connection))
         {
             var afterFirst = await assertAfterFirstDb.LeaveRequests.FirstAsync(x => x.Id == leave.Id);
             Assert.Equal(LeaveStatus.Pending, afterFirst.Status);
             Assert.Equal(manager2.Id, afterFirst.CurrentApproverId);
+
+            await using var manager2Db = SqliteTestDb.CreateContext(connection);
+            var manager2Service = TestServiceFactory.CreateLeaveService(
+                manager2Db,
+                new TestCurrentUserService(manager2User.Id, manager2User.Email));
+
+            await manager2Service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id, RowVersion = afterFirst.RowVersion });
         }
-
-        await using var manager2Db = SqliteTestDb.CreateContext(connection);
-        var manager2Service = TestServiceFactory.CreateLeaveService(
-            manager2Db,
-            new TestCurrentUserService(manager2User.Id, manager2User.Email));
-
-        await manager2Service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id });
 
         await using var finalAssertDb = SqliteTestDb.CreateContext(connection);
         var final = await finalAssertDb.LeaveRequests.FirstAsync(x => x.Id == leave.Id);

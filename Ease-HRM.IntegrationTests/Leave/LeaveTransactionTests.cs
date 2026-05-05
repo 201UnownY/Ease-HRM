@@ -40,6 +40,9 @@ public class LeaveTransactionTests
 
         await setupDb.SaveChangesAsync();
 
+        await using var fetchDb = SqliteTestDb.CreateContext(connection);
+        var fetchedLeave = await fetchDb.LeaveRequests.FirstAsync(x => x.Id == leave.Id);
+
         await using var actionDb = SqliteTestDb.CreateContext(connection);
 
         var service = new LeaveRequestService(
@@ -49,7 +52,7 @@ public class LeaveTransactionTests
             new ExceptionTranslator());
 
         await Assert.ThrowsAsync<Exception>(() =>
-            service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id }));
+            service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id, RowVersion = fetchedLeave.RowVersion }));
 
         await using var assertDb = SqliteTestDb.CreateContext(connection);
 

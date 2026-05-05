@@ -34,13 +34,16 @@ public class LeaveBoundaryTests
 
         await setupDb.SaveChangesAsync();
 
+        await using var fetchDb = SqliteTestDb.CreateContext(connection);
+        var fetchedLeave = await fetchDb.LeaveRequests.FirstAsync(x => x.Id == leave.Id);
+
         await using var actionDb = SqliteTestDb.CreateContext(connection);
 
         var service = TestServiceFactory.CreateLeaveService(
             actionDb,
             new TestCurrentUserService(managerUser.Id, managerUser.Email));
 
-        await service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id });
+        await service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leave.Id, RowVersion = fetchedLeave.RowVersion });
 
         await using var assertDb = SqliteTestDb.CreateContext(connection);
 

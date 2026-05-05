@@ -19,6 +19,11 @@ public class OrgUnitRepository : IOrgUnitRepository
         return _context.OrgUnits.AnyAsync(x => x.Name == name, cancellationToken);
     }
 
+    public Task<bool> NameExistsAsync(string name, Guid excludeOrgUnitId, CancellationToken cancellationToken = default)
+    {
+        return _context.OrgUnits.AnyAsync(x => x.Name == name && x.Id != excludeOrgUnitId, cancellationToken);
+    }
+
     public Task<bool> ExistsAsync(Guid orgUnitId, CancellationToken cancellationToken = default)
     {
         return _context.OrgUnits.AnyAsync(x => x.Id == orgUnitId, cancellationToken);
@@ -36,6 +41,11 @@ public class OrgUnitRepository : IOrgUnitRepository
             .OrderBy(x => x.Level)
             .ThenBy(x => x.Name)
             .ToListAsync(cancellationToken);
+    }
+
+    public Task<OrgUnit?> GetByIdAsync(Guid orgUnitId, CancellationToken cancellationToken = default)
+    {
+        return _context.OrgUnits.FirstOrDefaultAsync(x => x.Id == orgUnitId, cancellationToken);
     }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)

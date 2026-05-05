@@ -34,10 +34,14 @@ public class ApproveLeaveTests
 
         await setupDb.SaveChangesAsync();
 
+        await using var fetchDb = SqliteTestDb.CreateContext(connection);
+        var fetchedRequest = await fetchDb.LeaveRequests.FirstAsync(x => x.Id == leaveRequest.Id);
+        var rowVersion = fetchedRequest.RowVersion;
+
         await using var actionDb = SqliteTestDb.CreateContext(connection);
         var service = TestServiceFactory.CreateLeaveService(actionDb, new TestCurrentUserService(managerUser.Id, managerUser.Email, []));
 
-        await service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leaveRequest.Id });
+        await service.ApproveLeaveAsync(new ApproveLeaveRequest { LeaveRequestId = leaveRequest.Id, RowVersion = rowVersion });
 
         await using var assertDb = SqliteTestDb.CreateContext(connection);
         var updatedRequest = await assertDb.LeaveRequests.FirstAsync(x => x.Id == leaveRequest.Id);

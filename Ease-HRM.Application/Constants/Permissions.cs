@@ -36,6 +36,7 @@ public static class Permissions
     {
         public const string Create = "orgunit.create";
         public const string View = "orgunit.view";
+        public const string Update = "orgunit.update";
     }
 
     public static class Employee
